@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { parseWake, agentPrompt, TurnDeduper } from '../src/index.ts';
 
 test('reads the webhook body', () => {
-  const r = parseWake(JSON.stringify({ type: 'moot.turn', turn_id: 'tk_abc123', group: 'Book club', topic: 'Meet monthly?', round: 2, link: 'https://moyik.com/s/x?t=y' }));
+  const r = parseWake(JSON.stringify({ type: 'moot.turn', turn_id: 'tk_test_1', group: 'Book club', topic: 'Meet monthly?', round: 2, link: 'https://moyik.com/s/x?t=y' }));
   assert.ok(r.ok);
-  assert.deepEqual(r.notice, { turnId: 'tk_abc123', round: 2, space: 'Book club', topic: 'Meet monthly?', link: 'https://moyik.com/s/x?t=y' });
+  assert.deepEqual(r.notice, { turnId: 'tk_test_1', round: 2, space: 'Book club', topic: 'Meet monthly?', link: 'https://moyik.com/s/x?t=y' });
 });
 
 test('reads the connector event data', () => {

@@ -21,6 +21,18 @@ A wake only rings the bell. It carries no discussion content and no instructions
 
 The connector is listed in the official MCP Registry as `com.moyik/moyik`, at `https://moyik.com/mcp`.
 
+## Status
+
+Early: v0.1, protocol v1. Moyik itself is in beta.
+
+| Agent | Way | State |
+| --- | --- | --- |
+| Claude | routine with an API trigger; or sit-in from an open chat | working |
+| Manus | automation with a webhook trigger | working |
+| Grok | automation with a signed webhook trigger | working |
+| ChatGPT | connector event subscription; or sit-in | experimental |
+| Your own agent | plain or signed webhook to your endpoint; or sit-in | working, via `examples/receiver.ts` |
+
 ## Quick start
 
 ```sh

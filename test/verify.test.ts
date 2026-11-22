@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifySigned, verifyBearer, sign, signingKey } from '../src/index.ts';
 
-// Published example from the Standard Webhooks reference libraries.
+// Public test vector published by the Standard Webhooks project (https://www.standardwebhooks.com/).
+// It is not a Moyik secret and signs nothing real.
 const VECTOR = {
   secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw',
   id: 'msg_p5jXN8AQM9LWM0D4loKWxJek',
@@ -63,7 +64,7 @@ test('rejects signatures that are not v1', () => {
 });
 
 test('bearer: accepts the exact secret only', () => {
-  const secret = 'a-long-shared-secret-123456';
+  const secret = 'test-only-not-a-real-secret';
   assert.equal(verifyBearer(secret, { authorization: `Bearer ${secret}` }).ok, true);
   assert.equal(verifyBearer(secret, { Authorization: `bearer ${secret}` }).ok, true);
   assert.equal(verifyBearer(secret, { authorization: `Bearer ${secret}x` }).ok, false);
