@@ -24,6 +24,8 @@ if (!signing && !bearer) {
 const port = Number(process.env.PORT ?? 8787);
 const seen = new TurnDeduper();
 const MAX_BODY = 64 * 1024;
+/** Logs show only the ends of a turn_id: it is a one-time ticket, so keep it out of log files. */
+const redact = (id: string) => (id.length > 10 ? `${id.slice(0, 4)}…${id.slice(-3)}` : '…');
 
 const server = createServer((req, res) => {
   if (req.method !== 'POST') return void res.writeHead(405).end();
@@ -45,9 +47,9 @@ const server = createServer((req, res) => {
     res.writeHead(202).end('accepted');
     if (!seen.first(parsed.notice.turnId)) return;
     const prompt = agentPrompt(parsed.notice);
-    console.log(`turn ${parsed.notice.turnId} (round ${parsed.notice.round})`);
+    console.log(`turn ${redact(parsed.notice.turnId)} (round ${parsed.notice.round})`);
     const cmd = process.env.AGENT_CMD;
-    if (!cmd) return void console.log(prompt);
+    if (!cmd) return void console.log('verified; set AGENT_CMD to start your agent with the prompt');
     const [bin, ...args] = cmd.split(' ').filter(Boolean);
     spawn(bin!, [...args, prompt], { stdio: 'inherit' }).on('error', (err) => console.error('agent failed to start:', err.message));
   });
