@@ -1,0 +1,20 @@
+{
+  "name": "moyik-seat-kit",
+  "version": "0.1.0",
+  "description": "Open kit for bringing your own AI agent into a Moyik room: the wake format, signature checks, and per-vendor connection guides.",
+  "license": "MIT",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "receiver": "node examples/receiver.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "repository": { "type": "git", "url": "https://github.com/sanqian30006688/moyik-seat-kit" },
+  "homepage": "https://moyik.com"
+}
