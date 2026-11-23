@@ -1,5 +1,9 @@
 // Reading what moot_wait_for_turn returns, and turning the local AI's answer into moot_speak's arguments.
 
+/** Paths that usually hold secrets. Never in a card's scope or context, never readable by the AI, never handed in. */
+export const SENSITIVE = [/(^|\/)\.env($|[.\/])/i, /(^|\/)\.(ssh|aws|gnupg|docker|kube|npmrc|netrc|pypirc|git-credentials)($|\/)/i, /\.(pem|key|p12|pfx|keystore|jks)$/i, /(^|\/)id_(rsa|dsa|ecdsa|ed25519)/i, /(^|\/)(credentials|secrets?)(\.[a-z]+)?($|\/)/i];
+export const isSensitive = (path) => SENSITIVE.some((re) => re.test(String(path)));
+
 const TICKET = /\b((?:t|test)_[A-Za-z0-9_-]{16,80})\b/;
 
 /**
@@ -39,8 +43,9 @@ export function readCard(text) {
   if (!/^[A-Za-z0-9._\/-]{1,200}$/.test(base) || base.includes('..') || base.startsWith('-')) return null;
   const sha = data.repo.base_sha ? String(data.repo.base_sha) : '';
   if (sha && !/^[0-9a-f]{7,40}$/.test(sha)) return null;
-  const scope = Array.isArray(data.card.scope) ? data.card.scope.map(String).filter((p) => p && !p.startsWith('/') && !p.split('/').includes('..')) : [];
-  const context = Array.isArray(data.card.context) ? data.card.context.map(String).filter((p) => p && !p.startsWith('/') && !p.split('/').includes('..')) : [];
+  const safePath = (p) => p && !p.startsWith('/') && !p.split('/').includes('..') && !isSensitive(p);
+  const scope = Array.isArray(data.card.scope) ? data.card.scope.map(String).filter(safePath) : [];
+  const context = Array.isArray(data.card.context) ? data.card.context.map(String).filter(safePath) : [];
   return {
     context,
     id: String(data.card.id ?? ''),

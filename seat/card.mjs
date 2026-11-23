@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { configDir } from './config.mjs';
-import { fence } from './brief.mjs';
+import { fence, isSensitive } from './brief.mjs';
 
 function git(cwd, args, { allowFail = false } = {}) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
@@ -160,7 +160,11 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
       if (f.status === '??') git(dir, ['clean', '-fq', '--', f.path], { allowFail: true });
       else git(dir, ['checkout', '--quiet', start, '--', f.path], { allowFail: true });
     }
-    const kept = changed.filter((f) => inScope(f.path, card.scope));
+    const kept = changed.filter((f) => inScope(f.path, card.scope) && !isSensitive(f.path));
+  for (const f of changed.filter((f) => inScope(f.path, card.scope) && isSensitive(f.path))) {
+    if (f.status === '??') git(dir, ['clean', '-fq', '--', f.path], { allowFail: true });
+    else git(dir, ['checkout', '--quiet', start, '--', f.path], { allowFail: true });
+  }
     if (outside.length) notes += `${notes ? '\n' : ''}座位助手撤掉了范围外的改动：${outside.map((f) => f.path).slice(0, 10).join('、')}`;
     if (kept.length === 0) return { kind: 'pass', text: `没有改动。${notes}`.slice(0, 200) };
 

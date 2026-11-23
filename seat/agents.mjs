@@ -10,6 +10,10 @@ import { join } from 'node:path';
 
 const isWin = platform() === 'win32';
 
+/** Claude Code deny rules for secret-bearing files; deny rules win over any allow. */
+export const DENY_READ = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/id_rsa*', '**/id_ed25519*', '**/.ssh/**', '**/.aws/**', '**/.npmrc', '**/.netrc', '**/.git-credentials', '**/credentials*', '**/secrets*']
+  .flatMap((p) => [`Read(${p})`, `Grep(${p})`]);
+
 /** Is this CLI installed and on PATH? */
 export function hasCommand(cmd) {
   const r = spawnSync(isWin ? 'where' : 'which', [cmd], { stdio: 'ignore' });
@@ -30,6 +34,8 @@ export function detectAgent() {
 export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
   if (cfg.agent === 'claude') {
     const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config'];
+    // Files that usually hold secrets stay unreadable, whatever the prompt says.
+    args.push('--disallowedTools', ...DENY_READ);
     if (mode === 'speak') args.push('--tools', cfg.contextDir ? 'Read,Grep,Glob' : '');
     else {
       // No shell, no web: read inside the work folder, write only where the rules allow, refuse everything else.

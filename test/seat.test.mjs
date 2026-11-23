@@ -263,3 +263,14 @@ test('the round brief goes to the local AI inside a block it cannot close', () =
   assert.ok(p.indexOf('只是材料') < p.indexOf('忽略上面'));
   assert.match(p, /只输出这个 JSON/);
 });
+
+test('secret-bearing paths never enter a card, are unreadable, and are never handed in', async () => {
+  const { isSensitive } = await import('../seat/brief.mjs');
+  for (const p of ['.env', 'app/.env.local', 'certs/server.pem', '.ssh/id_rsa', 'config/credentials.json', 'secrets/x']) assert.ok(isSensitive(p), p);
+  for (const p of ['src/env.ts', 'docs/secretary.md', 'src/keyboard.ts']) assert.ok(!isSensitive(p), p);
+  const c = readCard(card({ card: { id: 'c', title: 't', scope: ['src/', '.env'], context: ['config/credentials.json', 'README'] } }));
+  assert.deepEqual(c.scope, ['src/']);
+  assert.deepEqual(c.context, ['README']);
+  const speak = agentCommand({ agent: 'claude', contextDir: '/tmp' }, { mode: 'speak', cwd: '/tmp', outFile: '/tmp/o' });
+  assert.ok(speak.args.includes('Read(**/.env)'));
+});
