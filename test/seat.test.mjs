@@ -281,3 +281,48 @@ test('the local AI is started without other services\' secrets', async () => {
   const env = childEnv({ PATH: '/bin', HOME: '/h', GITHUB_TOKEN: 'x', AWS_SECRET_ACCESS_KEY: 'x', NPM_TOKEN: 'x', ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_OAUTH_TOKEN: 'c', OPENAI_API_KEY: 'o', LANG: 'en' });
   assert.deepEqual(Object.keys(env).sort(), ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'LANG', 'OPENAI_API_KEY', 'PATH']);
 });
+
+test('the card block Moyik sends: review steps and cards without files are answered as speeches', async () => {
+  const block = (step, scope) =>
+    '```moyik-card\n' +
+    JSON.stringify({ kind: 'card', step, card: { id: 'abcdef12-0000', seq: 3, title: 't', goal: 'g', acceptance: [], scope, context: [], attempt: 1 }, repo: { host: 'github', full_name: 'acme/app', base_branch: 'main', branch: 'moyik/card-3-abcdef12' }, spec: { version: 2, title: 's' } }, null, 1) +
+    `\n\`\`\`\nturn_id（${TICKET}）`;
+  const write = readWait(block('write', ['src/']));
+  assert.equal(write.card.step, 'write');
+  assert.equal(write.card.repo.branch, 'moyik/card-3-abcdef12');
+  for (const t of [readWait(block('review', ['src/'])), readWait(block('write', []))]) {
+    const calls = [];
+    const out = await handleTurn({ call: async (n, a) => (calls.push([n, a]), '已收下') }, { agent: 'claude' }, t, {
+      ask: async (p, o) => (assert.equal(o.mode, 'speak'), '{"claim":"可以合"}'),
+      speakSchema: { properties: { claim: {} } },
+      confirm: async () => assert.fail('no local confirmation for a speech'),
+    });
+    assert.equal(out, '已交');
+    assert.deepEqual(calls[0][1], { claim: '可以合', turn_id: TICKET });
+  }
+  // A card from a project kept in Moyik (no GitHub branch) is a speech too.
+  assert.equal(readCard('```moyik-card\n' + JSON.stringify({ kind: 'card', step: 'write', card: { id: 'x', scope: ['a'] }, repo: { host: 'moyik', name: 'p', version: 1 } }) + '\n```'), null);
+});
+
+test('when Moyik takes changes as files, nothing is committed or pushed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'seat-git-'));
+  const bare = join(root, 'origin.git');
+  const repo = join(root, 'clone');
+  sh(root, 'init', '--quiet', '--bare', '-b', 'main', bare);
+  sh(root, 'clone', '--quiet', bare, repo);
+  for (const [k, v] of [['user.name', 'T'], ['user.email', 't@example.invalid'], ['commit.gpgsign', 'false']]) sh(repo, 'config', k, v);
+  writeFileSync(join(repo, 'README'), 'hi\n');
+  sh(repo, 'add', '.');
+  sh(repo, 'commit', '--quiet', '-m', 'init');
+  sh(repo, 'push', '--quiet', 'origin', 'main');
+  sh(repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/app.git');
+  sh(repo, 'config', `url.${bare}.insteadOf`, 'https://github.com/acme/app.git');
+  const t = readWait(card());
+  const args = await doCard(t.card, { agent: 'claude', repo }, async (p, o) => {
+    spawnSync('mkdir', ['-p', join(o.cwd, 'src')]);
+    writeFileSync(join(o.cwd, 'src', 'a.js'), 'x\n');
+    return '{"notes":"ok"}';
+  }, () => {}, async () => true, { canPushBranch: false });
+  assert.deepEqual(args.files, [{ name: 'src/a.js', content: 'x\n' }]);
+  assert.notEqual(spawnSync('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/moyik/card-c1'], { cwd: bare }).status, 0, 'no branch pushed');
+});

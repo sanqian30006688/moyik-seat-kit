@@ -12,8 +12,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Handles one turn. Returns a word for the log. Exported for tests. */
 export async function handleTurn(conn, cfg, turn, { ask = (p, o) => runAgent(cfg, p, o), speakSchema, confirm = (plan) => askOwner(turn.card, plan, { log }) } = {}) {
-  if (turn.card) {
-    const args = await doCard(turn.card, cfg, ask, (m) => log(m), confirm);
+  // A card's review step, or a card that names no files, is answered like a speech: from the brief, with no tools.
+  const works = turn.card && turn.card.step === 'write' && turn.card.scope.length > 0;
+  if (turn.card && !works) log(turn.card.step === 'review' ? '任务卡的审阅轮，按发言处理' : '这张任务卡没写能改哪些文件，不在本机仓库动手，按发言处理');
+  if (works) {
+    const canPushBranch = !!speakSchema?.properties?.branch;
+    const args = await doCard(turn.card, cfg, ask, (m) => log(m), confirm, { canPushBranch });
     await conn.call('moot_speak', { ...args, turn_id: turn.turnId });
     return args.branch ? `已推分支 ${args.branch.name}` : args.files ? '已交文件' : '没有动手或没有改动';
   }
