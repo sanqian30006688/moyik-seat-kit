@@ -14,6 +14,18 @@ const isWin = platform() === 'win32';
 export const DENY_READ = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/id_rsa*', '**/id_ed25519*', '**/.ssh/**', '**/.aws/**', '**/.npmrc', '**/.netrc', '**/.git-credentials', '**/credentials*', '**/secrets*']
   .flatMap((p) => [`Read(${p})`, `Grep(${p})`]);
 
+/** Names that usually hold secrets for other services. */
+const SECRET_ENV = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|_KEY$|KEY_ID$|^AWS_|^GITHUB_|^GH_|^NPM_|^GOOGLE_|^AZURE_|^SUPABASE|^DATABASE_URL$|^STRIPE)/i;
+/** The local AI's own sign-in settings, which it needs to run. */
+const AGENT_ENV = /^(ANTHROPIC_|CLAUDE_|OPENAI_|CODEX_)/;
+
+/** The environment the local AI is started with: everything except other services' secrets. */
+export function childEnv(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (AGENT_ENV.test(k) || !SECRET_ENV.test(k)) out[k] = v;
+  return out;
+}
+
 /** Is this CLI installed and on PATH? */
 export function hasCommand(cmd) {
   const r = spawnSync(isWin ? 'where' : 'which', [cmd], { stdio: 'ignore' });
@@ -82,7 +94,7 @@ export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = 
   const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile });
   try {
     const { code, stdout, stderr } = await new Promise((resolve, reject) => {
-      const child = spawnImpl(plan.cmd, plan.args, { cwd: workdir, shell: plan.shell ?? isWin, stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
+      const child = spawnImpl(plan.cmd, plan.args, { cwd: workdir, shell: plan.shell ?? isWin, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), windowsHide: true });
       let out = '';
       let err = '';
       const cap = (s, chunk) => (s.length < 2_000_000 ? s + chunk : s);

@@ -275,3 +275,9 @@ test('secret-bearing paths never enter a card, are unreadable, and are never han
   assert.equal(speak.args[speak.args.indexOf('--tools') + 1], '', 'no tools for speeches, even with an old config');
   assert.ok(speak.args.includes('Read(**/.env)'));
 });
+
+test('the local AI is started without other services\' secrets', async () => {
+  const { childEnv } = await import('../seat/agents.mjs');
+  const env = childEnv({ PATH: '/bin', HOME: '/h', GITHUB_TOKEN: 'x', AWS_SECRET_ACCESS_KEY: 'x', NPM_TOKEN: 'x', ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_OAUTH_TOKEN: 'c', OPENAI_API_KEY: 'o', LANG: 'en' });
+  assert.deepEqual(Object.keys(env).sort(), ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'LANG', 'OPENAI_API_KEY', 'PATH']);
+});
