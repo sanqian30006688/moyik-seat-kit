@@ -36,7 +36,8 @@ export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
     const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config'];
     // Files that usually hold secrets stay unreadable, whatever the prompt says.
     args.push('--disallowedTools', ...DENY_READ);
-    if (mode === 'speak') args.push('--tools', cfg.contextDir ? 'Read,Grep,Glob' : '');
+    // Writing a speech needs no tools: nothing on this computer can end up in a speech.
+    if (mode === 'speak') args.push('--tools', '');
     else {
       // No shell, no web: read inside the work folder, write only where the rules allow, refuse everything else.
       args.push('--tools', 'Read,Grep,Glob,Edit,Write', '--permission-mode', 'dontAsk');
@@ -76,7 +77,7 @@ function parseClaude(stdout) {
  */
 export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'moyik-seat-'));
-  const workdir = cwd ?? (mode === 'speak' && cfg.contextDir ? cfg.contextDir : scratch);
+  const workdir = cwd ?? scratch;
   const outFile = join(scratch, 'answer.txt');
   const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile });
   try {

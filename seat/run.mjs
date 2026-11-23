@@ -17,7 +17,7 @@ export async function handleTurn(conn, cfg, turn, { ask = (p, o) => runAgent(cfg
     await conn.call('moot_speak', { ...args, turn_id: turn.turnId });
     return args.branch ? `已推分支 ${args.branch.name}` : args.files ? '已交文件' : '没有动手或没有改动';
   }
-  const prompt = speechPrompt(turn.brief, { contextDir: cfg.contextDir });
+  const prompt = speechPrompt(turn.brief);
   let answer = extractJson(await ask(prompt, { mode: 'speak' }));
   if (!answer) answer = extractJson(await ask(`${prompt}\n上一次没有输出合法的 JSON。这次只输出 JSON 对象本身。`, { mode: 'speak' }));
   const args = answer && speakArgs(answer, turn.turnId, speakSchema);

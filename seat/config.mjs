@@ -48,7 +48,6 @@ function writeJson(name, value) {
  * @property {'claude'|'codex'|'custom'} agent  Which local AI answers for the seat.
  * @property {string} [agentCmd]   For agent=custom: a command that reads the prompt on stdin and prints the answer.
  * @property {string} [model]      Optional model name passed to the local AI.
- * @property {string} [contextDir] A folder the local AI may read (read-only) when it writes a speech. Off by default.
  * @property {string} [repo]       The owner's local clone that task cards are carried out in.
  * @property {number} [turnMinutes] How long the local AI may take for one turn.
  * @property {string} [groupId]    Only answer turns in this space.

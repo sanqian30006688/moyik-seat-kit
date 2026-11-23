@@ -36,7 +36,6 @@ setup 选项：
   --model <名字>                传给本机 AI 的模型名（可选）
   --repo <目录>                 做任务卡用的本机仓库（可选，任务卡目前只支持 Claude Code）
   --check "<命令>"              任务卡改完后由助手运行的检查命令，比如 "npm test"（可选）
-  --context <目录>              讨论时允许本机 AI 只读参考的目录（可选，默认不给看任何文件）
   --group <空间 id>             只守这一个空间（可选）
   --no-service                  不设为自动运行
   --origin <地址>               默认 ${DEFAULT_ORIGIN}
@@ -50,7 +49,6 @@ const { values: opt, positionals } = parseArgs({
     model: { type: 'string' },
     repo: { type: 'string' },
     check: { type: 'string' },
-    context: { type: 'string' },
     group: { type: 'string' },
     origin: { type: 'string' },
     'no-service': { type: 'boolean' },
@@ -68,7 +66,7 @@ async function setup() {
   if (!agent || !['claude', 'codex', 'custom'].includes(agent)) fail('没找到 claude 或 codex 命令。先装好其中一个并登录，或用 --agent custom --agent-cmd "<命令>"。');
   if (agent !== 'custom' && !hasCommand(agent)) fail(`找不到 ${agent} 命令。先装好它，在终端里登录一次，再运行 setup。`);
   if (agent === 'custom' && !(opt['agent-cmd'] ?? loadConfig().agentCmd)) fail('agent=custom 需要 --agent-cmd');
-  for (const [flag, dir] of [['--repo', opt.repo], ['--context', opt.context]]) if (dir && !existsSync(dir)) fail(`${flag} 的目录不存在：${dir}`);
+  if (opt.repo && !existsSync(opt.repo)) fail(`--repo 的目录不存在：${opt.repo}`);
   if (opt.repo && !existsSync(resolve(opt.repo, '.git'))) fail(`--repo 不是 git 仓库：${opt.repo}`);
 
   const cfg = saveConfig({
@@ -77,7 +75,6 @@ async function setup() {
     model: opt.model,
     repo: opt.repo && resolve(opt.repo),
     checkCommand: opt.check,
-    contextDir: opt.context && resolve(opt.context),
     groupId: opt.group,
     origin: opt.origin ?? loadConfig().origin,
   });

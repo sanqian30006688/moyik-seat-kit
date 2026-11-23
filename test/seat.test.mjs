@@ -272,5 +272,6 @@ test('secret-bearing paths never enter a card, are unreadable, and are never han
   assert.deepEqual(c.scope, ['src/']);
   assert.deepEqual(c.context, ['README']);
   const speak = agentCommand({ agent: 'claude', contextDir: '/tmp' }, { mode: 'speak', cwd: '/tmp', outFile: '/tmp/o' });
+  assert.equal(speak.args[speak.args.indexOf('--tools') + 1], '', 'no tools for speeches, even with an old config');
   assert.ok(speak.args.includes('Read(**/.env)'));
 });
