@@ -27,24 +27,27 @@ export function detectAgent() {
  * mode 'speak': no tools at all, or read-only file tools when the owner named a folder to consult.
  * mode 'card': file tools and edits inside the card's work folder, plus only the commands listed.
  */
-export function agentCommand(cfg, { mode, cwd, allowCommands = [], outFile }) {
+export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
   if (cfg.agent === 'claude') {
     const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config'];
     if (mode === 'speak') args.push('--tools', cfg.contextDir ? 'Read,Grep,Glob' : '');
     else {
-      args.push('--tools', 'Read,Grep,Glob,Edit,Write,Bash', '--permission-mode', 'dontAsk');
-      args.push('--allowedTools', 'Read', 'Grep', 'Glob', 'Edit', 'Write', ...allowCommands.map((c) => `Bash(${c})`));
+      // No shell, no web: read inside the work folder, write only where the rules allow, refuse everything else.
+      args.push('--tools', 'Read,Grep,Glob,Edit,Write', '--permission-mode', 'dontAsk');
+      args.push('--allowedTools', ...allowRules);
     }
     if (cfg.model) args.push('--model', cfg.model);
     return { cmd: 'claude', args, cwd, parse: parseClaude };
   }
   if (cfg.agent === 'codex') {
+    if (mode !== 'speak') throw new Error('任务卡目前只支持 Claude Code');
     const args = ['exec', '--skip-git-repo-check', '--sandbox', mode === 'speak' ? 'read-only' : 'workspace-write', '-C', cwd, '--output-last-message', outFile];
     if (cfg.model) args.push('--model', cfg.model);
     args.push('-');
     return { cmd: 'codex', args, cwd, parse: () => readFileSync(outFile, 'utf8') };
   }
   if (cfg.agent === 'custom' && cfg.agentCmd) {
+    if (mode !== 'speak') throw new Error('任务卡目前只支持 Claude Code');
     return { cmd: cfg.agentCmd, args: [], cwd, shell: true, parse: (stdout) => stdout };
   }
   throw new Error(`不认识的本机 AI：${cfg.agent}`);
@@ -65,11 +68,11 @@ function parseClaude(stdout) {
  * Runs the owner's AI once with `prompt` on stdin and returns its final answer as text.
  * Killed after `minutes`. Output is kept in memory only.
  */
-export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowCommands = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn } = {}) {
+export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'moyik-seat-'));
   const workdir = cwd ?? (mode === 'speak' && cfg.contextDir ? cfg.contextDir : scratch);
   const outFile = join(scratch, 'answer.txt');
-  const plan = agentCommand(cfg, { mode, cwd: workdir, allowCommands, outFile });
+  const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile });
   try {
     const { code, stdout, stderr } = await new Promise((resolve, reject) => {
       const child = spawnImpl(plan.cmd, plan.args, { cwd: workdir, shell: plan.shell ?? isWin, stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });

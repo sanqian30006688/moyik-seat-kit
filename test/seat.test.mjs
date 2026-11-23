@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 process.env.MOYIK_SEAT_HOME = mkdtempSync(join(tmpdir(), 'seat-home-'));
+process.env.MOYIK_SEAT_KEYCHAIN = 'off';
 
 const { readWait, readCard, extractJson, speakArgs, speechPrompt } = await import('../seat/brief.mjs');
 const { remoteMatches, inScope, testSummary, doCard } = await import('../seat/card.mjs');
@@ -15,6 +16,8 @@ const { login, pkcePair } = await import('../seat/oauth.mjs');
 const { Connector } = await import('../seat/mcp.mjs');
 const { agentCommand } = await import('../seat/agents.mjs');
 const { systemdUnit, launchdPlist } = await import('../seat/service.mjs');
+const { askOwner, answerCard, pendingCards } = await import('../seat/confirm.mjs');
+const { saveAuth, loadAuth, clearAll, configDir } = await import('../seat/config.mjs');
 
 const TICKET = 't_FAKEfakeFAKEfakeFAKEfake';
 const card = (over = {}) =>
@@ -62,9 +65,11 @@ test('local AI commands give no tools for speaking and only listed commands for 
   const speak = agentCommand({ agent: 'claude' }, { mode: 'speak', cwd: '/tmp', outFile: '/tmp/o' });
   assert.deepEqual(speak.args.slice(speak.args.indexOf('--tools'), speak.args.indexOf('--tools') + 2), ['--tools', '']);
   assert.ok(speak.args.includes('--strict-mcp-config'));
-  const work = agentCommand({ agent: 'claude' }, { mode: 'card', cwd: '/tmp', allowCommands: ['npm test'], outFile: '/tmp/o' });
+  const work = agentCommand({ agent: 'claude' }, { mode: 'card', cwd: '/tmp', allowRules: ['Edit(src/**)'], outFile: '/tmp/o' });
   assert.ok(work.args.includes('dontAsk'));
-  assert.ok(work.args.includes('Bash(npm test)'));
+  assert.equal(work.args[work.args.indexOf('--tools') + 1], 'Read,Grep,Glob,Edit,Write', 'no shell, no web');
+  assert.deepEqual(work.args.slice(work.args.indexOf('--allowedTools') + 1), ['Edit(src/**)']);
+  assert.throws(() => agentCommand({ agent: 'codex' }, { mode: 'card', cwd: '/tmp', outFile: '/tmp/o' }), /只支持 Claude Code/);
   const codex = agentCommand({ agent: 'codex' }, { mode: 'speak', cwd: '/tmp', outFile: '/tmp/o' });
   assert.deepEqual(codex.args.slice(0, 5), ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '-C']);
 });
@@ -121,17 +126,27 @@ test('a task card: changes in scope are committed and pushed to the named branch
   sh(repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/app.git');
   sh(repo, 'config', `url.${bare}.insteadOf`, 'https://github.com/acme/app.git');
 
+  writeFileSync(join(repo, 'SECRET.md'), 'not for the AI\n');
+  sh(repo, 'add', '.');
+  sh(repo, 'commit', '--quiet', '-m', 'more');
+  sh(repo, 'push', '--quiet', 'origin', 'main');
   const t = readWait(card());
+  let shown = '';
+  const yes = async (plan) => ((shown = plan), true);
   const ask = async (prompt, opts) => {
     assert.equal(opts.mode, 'card');
+    assert.deepEqual(opts.allowRules, ['Edit(src/**)', 'Write(src/**)']);
     assert.match(prompt, /只能改这些文件或目录：src\//);
+    assert.equal(existsSync(join(opts.cwd, 'SECRET.md')), false, 'files outside the card are not on disk');
     writeFileSync(join(opts.cwd, 'README'), 'changed outside scope\n');
     spawnSync('mkdir', ['-p', join(opts.cwd, 'src')]);
     writeFileSync(join(opts.cwd, 'src', 'hi.js'), 'console.log("hi")\n');
     writeFileSync(join(opts.cwd, 'stray.txt'), 'x');
     return '{"notes":"加了 hi.js"}';
   };
-  const args = await doCard(t.card, { repo, checkCommand: 'node src/hi.js' }, ask);
+  const args = await doCard(t.card, { agent: 'claude', repo, checkCommand: 'node src/hi.js' }, ask, () => {}, yes);
+  assert.match(shown, /分支：moyik\/card-c1/);
+  assert.match(shown, /检查命令：node src\/hi.js/);
   assert.equal(args.branch.name, 'moyik/card-c1');
   assert.equal(args.branch.tests.failed, 0);
   assert.match(args.branch.notes, /撤掉了范围外的改动/);
@@ -143,11 +158,16 @@ test('a task card: changes in scope are committed and pushed to the named branch
 
   // A second attempt after CI failed adds a commit on the same branch.
   const again = readWait(card({ card: { id: 'c1', title: 'Add greeting', goal: 'g', scope: ['src/'], attempt: 2 }, ci: { summary: 'lint failed' } }));
-  const fix = await doCard(again.card, { repo }, async (p, o) => {
+  const fix = await doCard(again.card, { agent: 'claude', repo }, async (p, o) => {
     assert.match(p, /lint failed/);
     writeFileSync(join(o.cwd, 'src', 'hi.js'), 'console.log("hi");\n');
     return '{"notes":"fixed"}';
-  });
+  }, () => {}, yes);
+  assert.equal(sh(repo, 'worktree', 'list').split('\n').length, 1, 'work folder removed');
+
+  // Without the owner's yes on this computer, the AI never runs.
+  const no = await doCard(again.card, { agent: 'claude', repo }, async () => assert.fail('AI must not run'), () => {}, async () => false);
+  assert.equal(no.kind, 'pass');
   assert.ok(fix.branch, JSON.stringify(fix));
   assert.equal(sh(bare, 'rev-parse', `${fix.branch.head_sha}~1`), args.branch.head_sha);
 });
@@ -156,7 +176,8 @@ test('a task card for another repository is refused before anything is touched',
   const root = mkdtempSync(join(tmpdir(), 'seat-git-'));
   sh(root, 'init', '--quiet', 'x');
   sh(join(root, 'x'), 'remote', 'add', 'origin', 'https://github.com/other/repo.git');
-  await assert.rejects(doCard(readWait(card()).card, { repo: join(root, 'x') }, async () => assert.fail('AI must not run')), /不是这张卡的仓库/);
+  await assert.rejects(doCard(readWait(card()).card, { agent: 'claude', repo: join(root, 'x') }, async () => assert.fail('AI must not run'), () => {}, async () => true), /不是这张卡的仓库/);
+  await assert.rejects(doCard(readWait(card()).card, { agent: 'codex', repo: join(root, 'x') }, async () => assert.fail('AI must not run')), /只支持 Claude Code/);
 });
 
 test('sign-in with PKCE through the loopback address, then a tool call with refresh', async () => {
@@ -203,4 +224,25 @@ test('sign-in with PKCE through the loopback address, then a tool call with refr
   assert.equal(saved.refreshToken, 'r2');
   server.close();
   assert.equal(pkcePair().verifier.length, 43);
+});
+
+test('a card waits for moyik-seat approve when no one is at a terminal', async () => {
+  const c = readWait(card()).card;
+  const waiting = askOwner(c, '计划', { interactive: false, minutes: 0.2, log: () => {} });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(pendingCards()[0].key, 'c1');
+  assert.ok(answerCard('c1', true));
+  assert.equal(await waiting, true);
+  assert.equal(pendingCards().length, 0);
+  assert.equal(answerCard('c1', true), false, 'nothing left to approve');
+  assert.equal(await askOwner(c, '计划', { interactive: false, minutes: 0.01, log: () => {} }), false, 'no answer is a no');
+});
+
+test('the sign-in falls back to a file only the owner can read, and uninstall clears everything', async () => {
+  const { statSync } = await import('node:fs');
+  assert.equal(saveAuth({ accessToken: 'x' }), 'file');
+  assert.equal(loadAuth().accessToken, 'x');
+  if (process.platform !== 'win32') assert.equal(statSync(join(configDir(), 'auth.json')).mode & 0o777, 0o600);
+  clearAll();
+  assert.equal(existsSync(configDir()), false);
 });

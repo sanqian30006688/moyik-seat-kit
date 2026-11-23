@@ -40,7 +40,9 @@ export function readCard(text) {
   const sha = data.repo.base_sha ? String(data.repo.base_sha) : '';
   if (sha && !/^[0-9a-f]{7,40}$/.test(sha)) return null;
   const scope = Array.isArray(data.card.scope) ? data.card.scope.map(String).filter((p) => p && !p.startsWith('/') && !p.split('/').includes('..')) : [];
+  const context = Array.isArray(data.card.context) ? data.card.context.map(String).filter((p) => p && !p.startsWith('/') && !p.split('/').includes('..')) : [];
   return {
+    context,
     id: String(data.card.id ?? ''),
     title: String(data.card.title ?? ''),
     goal: String(data.card.goal ?? ''),

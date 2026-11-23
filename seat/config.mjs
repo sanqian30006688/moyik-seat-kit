@@ -1,9 +1,10 @@
 // Where the seat helper keeps its own small state on the owner's computer.
 // It holds the owner's Moyik sign-in for this helper, and nothing from any AI vendor.
 
-import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, existsSync, appendFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, existsSync, appendFileSync, statSync, rmSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
+import { keychainGet, keychainSet, keychainDelete } from './secrets.mjs';
 
 export const DEFAULT_ORIGIN = 'https://moyik.com';
 
@@ -66,11 +67,31 @@ export function saveConfig(patch) {
   return next;
 }
 
-export const loadAuth = () => readJson('auth.json');
-export const saveAuth = (auth) => writeJson('auth.json', auth);
+/** The Moyik sign-in: from the keychain, or from auth.json (mode 600) where there is no keychain. */
+export function loadAuth() {
+  const fromKeychain = keychainGet();
+  return fromKeychain ?? readJson('auth.json');
+}
+export function saveAuth(auth) {
+  if (keychainSet(auth)) {
+    removeFile('auth.json');
+    return 'keychain';
+  }
+  writeJson('auth.json', auth);
+  return 'file';
+}
 export function clearAuth() {
-  const file = join(configDir(), 'auth.json');
-  if (existsSync(file)) writeFileSync(file, '{}\n', { mode: 0o600 });
+  keychainDelete();
+  removeFile('auth.json');
+}
+function removeFile(name) {
+  rmSync(join(configDir(), name), { force: true });
+}
+
+/** Everything the helper left on this computer: settings, sign-in, logs, work folders. */
+export function clearAll() {
+  clearAuth();
+  rmSync(configDir(), { recursive: true, force: true });
 }
 
 export const loadSeen = () => readJson('seen.json') ?? [];

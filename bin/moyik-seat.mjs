@@ -4,7 +4,10 @@
 import { parseArgs } from 'node:util';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadConfig, saveConfig, loadAuth, saveAuth, clearAuth, configDir, DEFAULT_ORIGIN, log } from '../seat/config.mjs';
+import { loadConfig, saveConfig, loadAuth, saveAuth, clearAuth, clearAll, configDir, DEFAULT_ORIGIN, log } from '../seat/config.mjs';
+import { pendingCards, answerCard } from '../seat/confirm.mjs';
+import { store } from '../seat/secrets.mjs';
+import { spawnSync } from 'node:child_process';
 import { login, revoke } from '../seat/oauth.mjs';
 import { detectAgent, hasCommand } from '../seat/agents.mjs';
 import { runSeat } from '../seat/run.mjs';
@@ -17,15 +20,22 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
   moyik-seat start            在前台守候（setup 之后一般不用手动运行）
   moyik-seat status           看看现在的设置和登录
   moyik-seat test             只连一次 Moyik，确认能读到你的席位
+  moyik-seat cards            看等你确认的任务卡
+  moyik-seat approve <卡>     同意让本机 AI 做这张任务卡
+  moyik-seat reject <卡>      不做这张任务卡
   moyik-seat logout           收回这台电脑的 Moyik 登录
-  moyik-seat uninstall        停止并移除自动运行
+  moyik-seat uninstall        停止自动运行，收回登录，删掉助手留在这台电脑上的所有东西
+
+助手不会自己更新。要更新，重新运行安装命令。
+任务卡每次都要你在这台电脑上确认，网页上的操作不能代替。
+你用的是自己的 AI 账号，遵守 Anthropic、OpenAI 等各家的使用条款是你自己的责任。
 
 setup 选项：
   --agent claude|codex|custom   用哪个本机 AI（默认自动找）
   --agent-cmd "<命令>"          agent=custom 时：从标准输入读提示、把回答打印出来的命令
   --model <名字>                传给本机 AI 的模型名（可选）
-  --repo <目录>                 做任务卡用的本机仓库（可选）
-  --check "<命令>"              任务卡改完后跑的检查命令，比如 "npm test"（可选）
+  --repo <目录>                 做任务卡用的本机仓库（可选，任务卡目前只支持 Claude Code）
+  --check "<命令>"              任务卡改完后由助手运行的检查命令，比如 "npm test"（可选）
   --context <目录>              讨论时允许本机 AI 只读参考的目录（可选，默认不给看任何文件）
   --group <空间 id>             只守这一个空间（可选）
   --no-service                  不设为自动运行
@@ -85,8 +95,8 @@ async function doLogin(cfg) {
     return;
   }
   const label = cfg.agent === 'claude' ? 'Claude Code' : cfg.agent === 'codex' ? 'Codex' : '本机 AI';
-  saveAuth(await login(cfg.origin, { label }));
-  console.log('已登录 Moyik。');
+  const where = saveAuth(await login(cfg.origin, { label }));
+  console.log(where === 'keychain' ? '已登录 Moyik，授权存在系统钥匙串里。' : `已登录 Moyik。这台电脑没有可用的系统钥匙串，授权存在只有你能读的文件里（${configDir()}）。`);
 }
 
 async function doTest(cfg) {
@@ -107,7 +117,7 @@ async function main() {
   if (cmd === 'start') return runSeat(cfg);
   if (cmd === 'status') {
     const auth = loadAuth();
-    console.log(JSON.stringify({ ...cfg, signedIn: !!auth?.accessToken, folder: configDir() }, null, 2));
+    console.log(JSON.stringify({ ...cfg, signedIn: !!auth?.accessToken, tokenStore: store(), folder: configDir() }, null, 2));
     return;
   }
   if (cmd === 'logout') {
@@ -115,7 +125,23 @@ async function main() {
     clearAuth();
     return console.log('已收回这台电脑的 Moyik 登录。也可以在 Moyik 网页「连接我的 AI」里看到并删除它。');
   }
-  if (cmd === 'uninstall') return console.log(uninstallService());
+  if (cmd === 'cards') {
+    const list = pendingCards();
+    if (!list.length) return console.log('现在没有等你确认的任务卡。');
+    for (const c of list) console.log(`[${c.key}]\n${c.plan}\n`);
+    return console.log('同意：moyik-seat approve <卡>；不做：moyik-seat reject <卡>');
+  }
+  if (cmd === 'approve' || cmd === 'reject') {
+    if (!positionals[1]) fail(`用法：moyik-seat ${cmd} <卡>`);
+    return console.log(answerCard(positionals[1], cmd === 'approve') ? (cmd === 'approve' ? '已同意，助手马上开始。' : '已拒绝，这张卡不做。') : '没有这张等确认的卡，先运行 moyik-seat cards 看看。');
+  }
+  if (cmd === 'uninstall') {
+    console.log(uninstallService());
+    await revoke(loadAuth()).catch(() => {});
+    if (cfg.repo) spawnSync('git', ['worktree', 'prune'], { cwd: cfg.repo, stdio: 'ignore' });
+    clearAll();
+    return console.log(`已收回 Moyik 登录，删掉了 ${configDir()}。助手推过的分支留在你的仓库里，不会动。最后可以运行 npm uninstall -g moyik-seat-kit 删掉程序本身。`);
+  }
   fail(HELP);
 }
 

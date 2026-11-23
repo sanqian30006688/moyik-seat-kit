@@ -5,16 +5,17 @@ import { Connector, NeedsLogin } from './mcp.mjs';
 import { readWait, speechPrompt, extractJson, speakArgs } from './brief.mjs';
 import { runAgent } from './agents.mjs';
 import { doCard } from './card.mjs';
+import { askOwner } from './confirm.mjs';
 import { loadAuth, saveAuth, loadSeen, saveSeen, log, shortId } from './config.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Handles one turn. Returns a word for the log. Exported for tests. */
-export async function handleTurn(conn, cfg, turn, { ask = (p, o) => runAgent(cfg, p, o), speakSchema } = {}) {
+export async function handleTurn(conn, cfg, turn, { ask = (p, o) => runAgent(cfg, p, o), speakSchema, confirm = (plan) => askOwner(turn.card, plan, { log }) } = {}) {
   if (turn.card) {
-    const args = await doCard(turn.card, cfg, ask, (m) => log(m));
+    const args = await doCard(turn.card, cfg, ask, (m) => log(m), confirm);
     await conn.call('moot_speak', { ...args, turn_id: turn.turnId });
-    return args.branch ? `已推分支 ${args.branch.name}` : args.files ? '已交文件' : '没有改动';
+    return args.branch ? `已推分支 ${args.branch.name}` : args.files ? '已交文件' : '没有动手或没有改动';
   }
   const prompt = speechPrompt(turn.brief, { contextDir: cfg.contextDir });
   let answer = extractJson(await ask(prompt, { mode: 'speak' }));
