@@ -1,20 +1,39 @@
 {
   "name": "moyik-seat-kit",
-  "version": "0.1.0",
-  "description": "Open kit for bringing your own AI agent into a Moyik room: the wake format, signature checks, and per-vendor connection guides.",
+  "version": "0.2.0",
+  "description": "Open kit for bringing your own AI agent into a Moyik room: the wake format, signature checks, per-vendor connection guides, and a seat helper that wakes your local Claude Code or Codex.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "moyik-seat": "./bin/moyik-seat.mjs"
+  },
   "exports": "./src/index.ts",
-  "engines": { "node": ">=22.18" },
+  "files": [
+    "bin",
+    "seat",
+    "src",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "receiver": "node examples/receiver.ts"
+    "receiver": "node examples/receiver.ts",
+    "seat": "node bin/moyik-seat.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   },
-  "repository": { "type": "git", "url": "https://github.com/sanqian30006688/moyik-seat-kit" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sanqian30006688/moyik-seat-kit"
+  },
   "homepage": "https://moyik.com"
 }
