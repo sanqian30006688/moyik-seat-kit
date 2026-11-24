@@ -117,7 +117,7 @@ export function planText(card, cfg) {
  * @param {object} cfg      seat config: repo, checkCommand
  * @param {(prompt: string, opts: object) => Promise<string>} ask  runs the owner's AI
  */
-export async function doCard(card, cfg, ask, say = () => {}, confirm = async () => false) {
+export async function doCard(card, cfg, ask, say = () => {}, confirm = async () => false, { canPushBranch = true } = {}) {
   if (cfg.agent && cfg.agent !== 'claude') throw new Error('任务卡目前只支持 Claude Code：它能把本机 AI 限制在卡片的文件里。其他 AI 先只做讨论轮');
   if (!card.scope.length) throw new Error('这张卡没有写明能改哪些文件，没有动手');
   if (!cfg.repo || !existsSync(join(cfg.repo, '.git'))) throw new Error('这张是任务卡，但还没设置本机仓库：运行 moyik-seat setup --repo <你的仓库目录>');
@@ -176,6 +176,9 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
       tests = testSummary(r.status ?? 1, `${r.stdout ?? ''}\n${r.stderr ?? ''}`);
     }
 
+    // Where Moyik takes the change as files and commits it itself, nothing is committed or pushed here.
+    if (!canPushBranch) return handInFiles(dir, kept, notes, tests);
+
     git(dir, ['add', '-A', '--', ...kept.map((f) => f.path)]);
     const title = card.title.replace(/[\r\n]+/g, ' ').slice(0, 72);
     git(dir, ['commit', '--quiet', '-m', `${title}\n\nMoyik card ${card.id}, attempt ${card.attempt}`]);
@@ -190,10 +193,16 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
       return { branch: { name: card.repo.branch, head_sha: head, ...(tests ? { tests } : {}), notes: notes.slice(0, 2000) } };
     }
     // No write access to the repository: hand in the changed files instead, as the code scene takes them.
-    const files = kept.slice(0, 5).map((f) => (existsSync(join(dir, f.path)) ? { name: f.path, content: readFileSync(join(dir, f.path), 'utf8') } : { name: f.path, delete: true }));
-    return { files, text: `推不上分支（主人对仓库可能没有写权限），改为直接交文件。${notes}`.slice(0, 200), ...(tests ? { detail: `检查结果：\n${tests.summary}` } : {}) };
+    return handInFiles(dir, kept, `推不上分支（主人对仓库可能没有写权限），改为直接交文件。${notes}`, tests);
   } finally {
     // The work folder is not left behind; the branch itself stays in the owner's clone.
     git(repo, ['worktree', 'remove', '--force', dir], { allowFail: true });
   }
+}
+
+/** The change as moot_speak files: whole content of each changed file, at most 5. */
+function handInFiles(dir, kept, notes, tests) {
+  if (kept.length > 5) return { kind: 'pass', text: `改动涉及 ${kept.length} 个文件，超过一次能交的 5 个，这次没有交。请把卡片拆小。`.slice(0, 200) };
+  const files = kept.map((f) => (existsSync(join(dir, f.path)) ? { name: f.path, content: readFileSync(join(dir, f.path), 'utf8') } : { name: f.path, delete: true }));
+  return { files, text: (notes || '按卡片改好了。').slice(0, 200), ...(tests ? { detail: `检查结果（${tests.passed} 过，${tests.failed} 没过）：\n${tests.summary}` } : {}) };
 }

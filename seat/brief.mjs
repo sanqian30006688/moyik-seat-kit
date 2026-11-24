@@ -47,6 +47,7 @@ export function readCard(text) {
   const scope = Array.isArray(data.card.scope) ? data.card.scope.map(String).filter(safePath) : [];
   const context = Array.isArray(data.card.context) ? data.card.context.map(String).filter(safePath) : [];
   return {
+    step: data.step === 'review' ? 'review' : 'write',
     context,
     id: String(data.card.id ?? ''),
     title: String(data.card.title ?? ''),
