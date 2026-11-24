@@ -9,7 +9,8 @@ import { pendingCards, answerCard } from '../seat/confirm.mjs';
 import { store } from '../seat/secrets.mjs';
 import { spawnSync } from 'node:child_process';
 import { login, revoke } from '../seat/oauth.mjs';
-import { detectAgent, hasCommand } from '../seat/agents.mjs';
+import { detectAgent, hasCommand, ANTIGRAVITY_RISK } from '../seat/agents.mjs';
+import { addMoyikToAntigravity, readTokenQuietly, SIT_IN_PROMPT } from '../seat/antigravity.mjs';
 import { runSeat } from '../seat/run.mjs';
 import { NeedsLogin, Connector } from '../seat/mcp.mjs';
 import { installService, uninstallService } from '../seat/service.mjs';
@@ -20,6 +21,7 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
   moyik-seat start            在前台守候（setup 之后一般不用手动运行）
   moyik-seat status           看看现在的设置和登录
   moyik-seat test             只连一次 Moyik，确认能读到你的席位
+  moyik-seat add antigravity [--token]  把 Moyik 加进 Antigravity 的 MCP 设置（--token：在终端里输入静态令牌），你在 Antigravity 里自己让它入座
   moyik-seat cards            看等你确认的任务卡
   moyik-seat approve <卡>     同意让本机 AI 做这张任务卡
   moyik-seat reject <卡>      不做这张任务卡
@@ -31,8 +33,10 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
 你用的是自己的 AI 账号，遵守 Anthropic、OpenAI 等各家的使用条款是你自己的责任。
 
 setup 选项：
-  --agent claude|codex|custom   用哪个本机 AI（默认自动找）
-  --agent-cmd "<命令>"          agent=custom 时：从标准输入读提示、把回答打印出来的命令
+  --agent claude|codex|antigravity|custom   用哪个本机 AI（默认自动找 claude、codex）
+  --agent-cmd "<命令>"          agent=custom 时：从标准输入读提示、把回答打印出来的命令；
+                                agent=antigravity 时：agy 的路径（默认 agy）
+  --accept-google-risk          agent=antigravity 时必须加：你确认自己承担谷歌封号风险（运行 setup 会先说明）
   --model <名字>                传给本机 AI 的模型名（可选）
   --repo <目录>                 做任务卡用的本机仓库（可选，任务卡目前只支持 Claude Code）
   --check "<命令>"              任务卡改完后由助手运行的检查命令，比如 "npm test"（可选）
@@ -52,6 +56,8 @@ const { values: opt, positionals } = parseArgs({
     group: { type: 'string' },
     origin: { type: 'string' },
     'no-service': { type: 'boolean' },
+    'accept-google-risk': { type: 'boolean' },
+    token: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -63,8 +69,12 @@ const fail = (msg) => {
 
 async function setup() {
   const agent = opt.agent ?? loadConfig().agent ?? detectAgent();
-  if (!agent || !['claude', 'codex', 'custom'].includes(agent)) fail('没找到 claude 或 codex 命令。先装好其中一个并登录，或用 --agent custom --agent-cmd "<命令>"。');
-  if (agent !== 'custom' && !hasCommand(agent)) fail(`找不到 ${agent} 命令。先装好它，在终端里登录一次，再运行 setup。`);
+  if (!agent || !['claude', 'codex', 'antigravity', 'custom'].includes(agent)) fail('没找到 claude 或 codex 命令。先装好其中一个并登录，或用 --agent custom --agent-cmd "<命令>"。');
+  if (agent === 'antigravity') {
+    if (!opt['accept-google-risk']) fail(ANTIGRAVITY_RISK + '\n\n不想冒这个险：运行 moyik-seat add antigravity，在 Antigravity 里自己让它入座。');
+    if (!hasCommand(opt['agent-cmd'] ?? 'agy')) fail('找不到 agy 命令。先装好 Antigravity CLI，在终端里运行 agy 登录一次，再运行 setup。');
+  } else if (agent !== 'custom' && !hasCommand(agent)) fail(`找不到 ${agent} 命令。先装好它，在终端里登录一次，再运行 setup。`);
+  if (agent === 'antigravity' && opt.repo) console.log('提醒：任务卡目前只支持 Claude Code，Antigravity 只替你发言。');
   if (agent === 'custom' && !(opt['agent-cmd'] ?? loadConfig().agentCmd)) fail('agent=custom 需要 --agent-cmd');
   if (opt.repo && !existsSync(opt.repo)) fail(`--repo 的目录不存在：${opt.repo}`);
   if (opt.repo && !existsSync(resolve(opt.repo, '.git'))) fail(`--repo 不是 git 仓库：${opt.repo}`);
@@ -77,6 +87,7 @@ async function setup() {
     checkCommand: opt.check,
     groupId: opt.group,
     origin: opt.origin ?? loadConfig().origin,
+    acceptGoogleRisk: agent === 'antigravity' ? true : undefined,
   });
   console.log(`本机 AI：${agent}。设置存在 ${configDir()}`);
   await doLogin(cfg);
@@ -91,7 +102,7 @@ async function doLogin(cfg) {
     console.log('已经登录过 Moyik，沿用。要换账号先运行 moyik-seat logout。');
     return;
   }
-  const label = cfg.agent === 'claude' ? 'Claude Code' : cfg.agent === 'codex' ? 'Codex' : '本机 AI';
+  const label = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' }[cfg.agent] ?? '本机 AI';
   const where = saveAuth(await login(cfg.origin, { label }));
   console.log(where === 'keychain' ? '已登录 Moyik，授权存在系统钥匙串里。' : `已登录 Moyik。这台电脑没有可用的系统钥匙串，授权存在只有你能读的文件里（${configDir()}）。`);
 }
@@ -121,6 +132,21 @@ async function main() {
     await revoke(loadAuth());
     clearAuth();
     return console.log('已收回这台电脑的 Moyik 登录。也可以在 Moyik 网页「连接我的 AI」里看到并删除它。');
+  }
+  if (cmd === 'add') {
+    if (positionals[1] !== 'antigravity') fail('用法：moyik-seat add antigravity');
+    let token;
+    if (opt.token) {
+      token = await readTokenQuietly();
+      if (!/^moot_st_\S{8,190}$/.test(token)) fail('这不像 Moyik 的静态令牌（以 moot_st_ 开头）。到 Moyik「连接我的 AI」重新生成一个。');
+    }
+    const files = addMoyikToAntigravity(opt.origin ?? cfg.origin, { token });
+    console.log(`已把 Moyik 加进 Antigravity 的设置：\n  ${files.join('\n  ')}\n（原文件备份成 .bak）`);
+    console.log(token ? '\n令牌只写进了上面的文件（只有你能读），没有经过任何聊天。不用时到 Moyik「连接我的 AI」删掉它。' : '\n如果 Antigravity 连不上、要你填令牌：到 Moyik「连接我的 AI」生成静态令牌，再运行 moyik-seat add antigravity --token。不要把令牌贴进任何 AI 的对话框。');
+    console.log('\n接下来：\n1. 打开 Antigravity，在 MCP Servers 里刷新（没用令牌时会弹出浏览器，登录 Moyik、点「允许」）。\n2. 在 Moyik 网页「我的 AI」里把「谁替你说话」选成「我自己的 AI」。\n3. 在 Antigravity 的对话框里粘下面这段，工具权限选「总是允许」：\n');
+    console.log(SIT_IN_PROMPT);
+    console.log('\n这种方式是你自己在 Antigravity 里操作，不在后台叫醒它，没有谷歌封号的问题；Antigravity 要一直开着这个对话。');
+    return;
   }
   if (cmd === 'cards') {
     const list = pendingCards();

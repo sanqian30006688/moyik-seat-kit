@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
+import { acpPrompt } from './acp.mjs';
 
 const isWin = platform() === 'win32';
 
@@ -17,7 +18,7 @@ export const DENY_READ = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/id
 /** Names that usually hold secrets for other services. */
 const SECRET_ENV = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|_KEY$|KEY_ID$|^AWS_|^GITHUB_|^GH_|^NPM_|^GOOGLE_|^AZURE_|^SUPABASE|^DATABASE_URL$|^STRIPE)/i;
 /** The local AI's own sign-in settings, which it needs to run. */
-const AGENT_ENV = /^(ANTHROPIC_|CLAUDE_|OPENAI_|CODEX_)/;
+const AGENT_ENV = /^(ANTHROPIC_|CLAUDE_|OPENAI_|CODEX_|GEMINI_)/;
 
 /** The environment the local AI is started with: everything except other services' secrets. */
 export function childEnv(env = process.env) {
@@ -35,7 +36,24 @@ export function hasCommand(cmd) {
 export function detectAgent() {
   if (hasCommand('claude')) return 'claude';
   if (hasCommand('codex')) return 'codex';
+  // Antigravity is never picked on its own: it needs the owner to accept Google's terms risk (see setup).
   return null;
+}
+
+/**
+ * Shown before Antigravity can be chosen. Google says consumer sign-ins may not be driven by
+ * third-party tools in the background; the owner decides with this in front of them.
+ */
+export const ANTIGRAVITY_RISK = `注意：用 Antigravity 当座位 AI 有封号风险。
+谷歌说过，用个人谷歌账号（Google AI Pro / Ultra 订阅）登录的 Antigravity 不允许被第三方程序在后台调用，
+个人自用也一样；违反的账号可能被停用，并且会连带 Gemini CLI 和 Gemini Code Assist。
+座位助手做的正是这件事：轮到你时在后台叫醒你电脑上的 agy。
+用 Gemini API key 或 Google Cloud 登录 agy 不在这条限制里。
+你确认自己承担这个风险，才加 --accept-google-risk 继续。`;
+
+/** Antigravity's ACP command: `agy acp`, or the owner's own path in agentCmd. */
+export function antigravityCommand(cfg) {
+  return { cmd: cfg.agentCmd || 'agy', args: ['acp'] };
 }
 
 /**
@@ -90,6 +108,18 @@ function parseClaude(stdout) {
 export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'moyik-seat-'));
   const workdir = cwd ?? scratch;
+  if (cfg.agent === 'antigravity') {
+    try {
+      if (mode !== 'speak') throw new Error('任务卡目前只支持 Claude Code');
+      if (!cfg.acceptGoogleRisk) throw new Error('没有确认 Antigravity 的封号风险，不叫醒它。运行 moyik-seat setup --agent antigravity --accept-google-risk');
+      // Speeches run in an empty scratch folder: nothing on this computer can end up in a speech.
+      const { cmd, args } = antigravityCommand(cfg);
+      const { text } = await acpPrompt({ cmd, args, cwd: scratch, env: childEnv(), prompt, minutes, spawnImpl, shell: isWin });
+      return text;
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
   const outFile = join(scratch, 'answer.txt');
   const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile });
   try {
