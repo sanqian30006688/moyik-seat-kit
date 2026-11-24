@@ -41,7 +41,7 @@ export class Connector {
         'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
         'mcp-protocol-version': '2025-06-18',
-        'user-agent': 'moyik-seat/0.2',
+        'user-agent': 'moyik-seat/0.3',
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: this.nextId++, method, params }),
       signal: AbortSignal.timeout(timeoutMs),

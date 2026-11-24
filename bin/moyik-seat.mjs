@@ -9,8 +9,9 @@ import { pendingCards, answerCard } from '../seat/confirm.mjs';
 import { store } from '../seat/secrets.mjs';
 import { spawnSync } from 'node:child_process';
 import { login, revoke } from '../seat/oauth.mjs';
-import { detectAgent, hasCommand } from '../seat/agents.mjs';
-import { runSeat } from '../seat/run.mjs';
+import { detectAgents, hasCommand } from '../seat/agents.mjs';
+import { readQuota, describe } from '../seat/quota.mjs';
+import { runSeat, agentsOf } from '../seat/run.mjs';
 import { NeedsLogin, Connector } from '../seat/mcp.mjs';
 import { installService, uninstallService } from '../seat/service.mjs';
 
@@ -20,6 +21,7 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
   moyik-seat start            在前台守候（setup 之后一般不用手动运行）
   moyik-seat status           看看现在的设置和登录
   moyik-seat test             只连一次 Moyik，确认能读到你的席位
+  moyik-seat quota            看本机 AI 还剩多少额度（5 小时和每周）
   moyik-seat cards            看等你确认的任务卡
   moyik-seat approve <卡>     同意让本机 AI 做这张任务卡
   moyik-seat reject <卡>      不做这张任务卡
@@ -31,7 +33,7 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
 你用的是自己的 AI 账号，遵守 Anthropic、OpenAI 等各家的使用条款是你自己的责任。
 
 setup 选项：
-  --agent claude|codex|custom   用哪个本机 AI（默认自动找）
+  --agent claude|codex|custom   用哪个本机 AI（默认自动找；两个都装了就都用，用逗号排先后，如 claude,codex）
   --agent-cmd "<命令>"          agent=custom 时：从标准输入读提示、把回答打印出来的命令
   --model <名字>                传给本机 AI 的模型名（可选）
   --repo <目录>                 做任务卡用的本机仓库（可选，任务卡目前只支持 Claude Code）
@@ -62,15 +64,20 @@ const fail = (msg) => {
 };
 
 async function setup() {
-  const agent = opt.agent ?? loadConfig().agent ?? detectAgent();
-  if (!agent || !['claude', 'codex', 'custom'].includes(agent)) fail('没找到 claude 或 codex 命令。先装好其中一个并登录，或用 --agent custom --agent-cmd "<命令>"。');
-  if (agent !== 'custom' && !hasCommand(agent)) fail(`找不到 ${agent} 命令。先装好它，在终端里登录一次，再运行 setup。`);
+  const saved = loadConfig();
+  const asked = opt.agent ? opt.agent.split(',').map((a) => a.trim()).filter(Boolean) : null;
+  const agents = asked ?? (saved.agents?.length ? saved.agents : configuredBefore() ? [saved.agent] : detectAgents());
+  if (!agents.length || agents.some((a) => !['claude', 'codex', 'custom'].includes(a))) fail('没找到 claude 或 codex 命令。先装好其中一个并登录，或用 --agent custom --agent-cmd "<命令>"。');
+  if (agents.includes('custom') && agents.length > 1) fail('agent=custom 只能单独用');
+  for (const a of agents) if (a !== 'custom' && !hasCommand(a)) fail(`找不到 ${a} 命令。先装好它，在终端里登录一次，再运行 setup。`);
+  const agent = agents[0];
   if (agent === 'custom' && !(opt['agent-cmd'] ?? loadConfig().agentCmd)) fail('agent=custom 需要 --agent-cmd');
   if (opt.repo && !existsSync(opt.repo)) fail(`--repo 的目录不存在：${opt.repo}`);
   if (opt.repo && !existsSync(resolve(opt.repo, '.git'))) fail(`--repo 不是 git 仓库：${opt.repo}`);
 
   const cfg = saveConfig({
     agent,
+    agents,
     agentCmd: opt['agent-cmd'],
     model: opt.model,
     repo: opt.repo && resolve(opt.repo),
@@ -78,7 +85,8 @@ async function setup() {
     groupId: opt.group,
     origin: opt.origin ?? loadConfig().origin,
   });
-  console.log(`本机 AI：${agent}。设置存在 ${configDir()}`);
+  console.log(`本机 AI：${agents.join('、')}${agents.length > 1 ? '（轮到你时先用有余量的那个）' : ''}。设置存在 ${configDir()}`);
+  await showQuota({ ...cfg, agents });
   await doLogin(cfg);
   await doTest(cfg);
   if (!opt['no-service']) console.log(installService());
@@ -104,6 +112,17 @@ async function doTest(cfg) {
   console.log(`连上了。Moyik 说：${text.split('\n')[0].slice(0, 120)}`);
 }
 
+function configuredBefore() {
+  return existsSync(resolve(configDir(), 'config.json'));
+}
+
+async function showQuota(cfg) {
+  for (const a of agentsOf(cfg)) {
+    if (a === 'custom') continue;
+    console.log(`${a}：${describe(await readQuota(a))}`);
+  }
+}
+
 async function main() {
   const cmd = positionals[0] ?? 'help';
   const cfg = loadConfig();
@@ -112,6 +131,7 @@ async function main() {
   if (cmd === 'login') return doLogin(cfg);
   if (cmd === 'test') return doTest(cfg);
   if (cmd === 'start') return runSeat(cfg);
+  if (cmd === 'quota') return showQuota(cfg);
   if (cmd === 'status') {
     const auth = loadAuth();
     console.log(JSON.stringify({ ...cfg, signedIn: !!auth?.accessToken, tokenStore: store(), folder: configDir() }, null, 2));

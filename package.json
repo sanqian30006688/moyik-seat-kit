@@ -1,6 +1,6 @@
 {
   "name": "moyik-seat-kit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open kit for bringing your own AI agent into a Moyik room: the wake format, signature checks, per-vendor connection guides, and a seat helper that wakes your local Claude Code or Codex.",
   "license": "MIT",
   "type": "module",
