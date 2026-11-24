@@ -326,3 +326,57 @@ test('when Moyik takes changes as files, nothing is committed or pushed', async 
   assert.deepEqual(args.files, [{ name: 'src/a.js', content: 'x\n' }]);
   assert.notEqual(spawnSync('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/moyik/card-c1'], { cwd: bare }).status, 0, 'no branch pushed');
 });
+
+test('Antigravity: needs the risk accepted, speaks through ACP with no tools, never signs in for the agent', async () => {
+  const { runAgent } = await import('../seat/agents.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'acp-'));
+  const fake = join(dir, 'agy');
+  const logFile = join(dir, 'calls.log');
+  writeFileSync(fake, `#!/usr/bin/env node
+const fs = require('fs');
+let buf = '';
+const out = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\\n');
+process.stdin.on('data', (d) => {
+  buf += d;
+  let i;
+  while ((i = buf.indexOf('\\n')) >= 0) {
+    const msg = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+    fs.appendFileSync(${JSON.stringify(logFile)}, (msg.method ?? 'reply:' + JSON.stringify(msg.result)) + ' ' + process.argv.slice(2).join(' ') + '\\n');
+    if (msg.method === 'initialize') out({ id: msg.id, result: { protocolVersion: 1, agentInfo: { name: 'antigravity-acp' }, authMethods: [{ id: 'oauth-personal' }] } });
+    if (msg.method === 'session/new') out({ id: msg.id, result: { sessionId: 's1' } });
+    if (msg.method === 'session/prompt') {
+      out({ id: 99, method: 'session/request_permission', params: { sessionId: 's1', options: [] } });
+      out({ method: 'session/update', params: { sessionId: 's1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '{"text":"我同意' } } } });
+      out({ method: 'session/update', params: { sessionId: 's1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '","kind":"立场"}' } } } });
+      setTimeout(() => out({ id: msg.id, result: { stopReason: 'end_turn' } }), 50);
+    }
+  }
+});
+`);
+  spawnSync('chmod', ['+x', fake]);
+  const cfg = { agent: 'antigravity', agentCmd: fake, turnMinutes: 1 };
+  await assert.rejects(runAgent(cfg, 'hi'), /封号风险/);
+  const text = await runAgent({ ...cfg, acceptGoogleRisk: true }, '写一条发言');
+  assert.equal(text, '{"text":"我同意","kind":"立场"}');
+  const calls = readFileSync(logFile, 'utf8');
+  assert.match(calls, /^initialize acp/m);
+  assert.match(calls, /reply:\{"outcome":\{"outcome":"cancelled"\}\}/);
+  assert.doesNotMatch(calls, /authenticate/);
+  await assert.rejects(runAgent({ ...cfg, acceptGoogleRisk: true }, 'x', { mode: 'card' }), /只支持 Claude Code/);
+});
+
+test('add antigravity writes the Moyik address and keeps the owner\'s other servers', async () => {
+  const { addMoyikToAntigravity, antigravityConfigPaths } = await import('../seat/antigravity.mjs');
+  const home = mkdtempSync(join(tmpdir(), 'home-'));
+  const [current, old] = antigravityConfigPaths(home);
+  assert.deepEqual(addMoyikToAntigravity('https://moyik.com/', { home }), [current]);
+  assert.deepEqual(JSON.parse(readFileSync(current, 'utf8')), { mcpServers: { moyik: { serverUrl: 'https://moyik.com/mcp' } } });
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(home, '.gemini', 'antigravity'), { recursive: true });
+  writeFileSync(old, JSON.stringify({ mcpServers: { other: { command: 'x' } } }));
+  addMoyikToAntigravity('https://moyik.com', { home });
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(old, 'utf8')).mcpServers), ['other', 'moyik']);
+  assert.ok(existsSync(`${old}.bak`));
+  writeFileSync(current, '{bad');
+  assert.throws(() => addMoyikToAntigravity('https://moyik.com', { home }), /不是合法的 JSON/);
+});

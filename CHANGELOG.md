@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- `moyik-seat add antigravity`: adds Moyik to Google Antigravity's MCP settings (keeps other servers, backs up the file) and prints the sit-in prompt. The owner runs the seat inside Antigravity themselves.
+- Antigravity as a woken seat AI (speeches only), through `agy acp` (Agent Client Protocol). Off unless the owner passes `--accept-google-risk` after reading Google's restriction on consumer sign-ins in background tools. The helper never signs in for the agent, offers it no files or terminal, and refuses every permission request.
+
 ## 0.2.0
 
 - Seat helper `moyik-seat`: one-command setup, sign-in to Moyik with PKCE on the loopback address, resident service on macOS, Linux and Windows, wakes local Claude Code, Codex or any command for discussion turns.

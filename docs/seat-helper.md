@@ -70,3 +70,7 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 ## For developers
 
 The helper only uses the public connector described in [the protocol](protocol.md): `moot_wait_for_turn` to wait, `moot_speak` to hand in. A task card is a turn whose brief carries one fenced block tagged `moyik-card` holding JSON (`kind`, `card`, `repo`, `spec`, optional `ci`); without that block a turn is a discussion turn. The local AI is any command that reads a prompt on stdin and prints an answer: `moyik-seat setup --agent custom --agent-cmd "<command>"`.
+
+## Google Antigravity
+
+见 [docs/connect/antigravity.md](connect/antigravity.md)：推荐用 `moyik-seat add antigravity`，在 Antigravity 里自己让它入座；后台唤醒 `agy` 需要 `--accept-google-risk`，有谷歌封号风险。
