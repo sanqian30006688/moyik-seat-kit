@@ -326,3 +326,104 @@ test('when Moyik takes changes as files, nothing is committed or pushed', async 
   assert.deepEqual(args.files, [{ name: 'src/a.js', content: 'x\n' }]);
   assert.notEqual(spawnSync('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/moyik/card-c1'], { cwd: bare }).status, 0, 'no branch pushed');
 });
+
+test('quota: reads Claude Code /usage data in both shapes, and API-key sessions have no windows', async () => {
+  const { fromClaudeUsage } = await import('../seat/quota.mjs');
+  const later = new Date(Date.now() + 3600_000).toISOString();
+  const a = fromClaudeUsage({ rate_limits_available: true, rate_limits: { five_hour: { utilization: 42.4, resets_at: later }, seven_day: { utilization: 85, resets_at: later } } });
+  assert.equal(a.state, 'low');
+  assert.deepEqual(a.windows.map((w) => [w.kind, w.used]), [['five_hour', 42], ['weekly', 85]]);
+  const b = fromClaudeUsage({ rate_limits: { limits: [{ kind: 'session', group: 'session', percent: 100, resets_at: later }, { kind: 'weekly_scoped', percent: 10 }, { kind: 'weekly_all', percent: 30, resets_at: later }] } });
+  assert.equal(b.state, 'out');
+  assert.equal(b.windows.length, 2, 'per-model rows are left out');
+  const key = fromClaudeUsage({ rate_limits_available: false, rate_limits: null });
+  assert.deepEqual([key.plan, key.state, key.windows], [false, 'unknown', []]);
+});
+
+test('quota: a spent window that has already reset no longer counts', async () => {
+  const { stateOf } = await import('../seat/quota.mjs');
+  assert.equal(stateOf([{ kind: 'five_hour', used: 100, resetsAt: new Date(Date.now() - 1000).toISOString() }, { kind: 'weekly', used: 20, resetsAt: null }]), 'ok');
+});
+
+test('quota: Codex limits keep only the windows, never the account id or plan', async () => {
+  const { fromCodexLimits, reportArgs } = await import('../seat/quota.mjs');
+  const at = Math.floor(Date.now() / 1000) + 600;
+  const q = fromCodexLimits({ accountId: 'acct_SECRET', rateLimits: { planType: 'pro', primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: at }, secondary: { usedPercent: 91, windowDurationMins: 10080, resetsAt: at } } });
+  assert.equal(q.state, 'low');
+  const sent = JSON.stringify(reportArgs(q));
+  assert.doesNotMatch(sent, /acct_SECRET|pro"/);
+  assert.deepEqual(reportArgs(q).windows[0], { kind: 'five_hour', used: 12, resets_at: new Date(at * 1000).toISOString() });
+  assert.equal(fromCodexLimits({ rateLimits: { rateLimitReachedType: 'rate_limit_reached', primary: { usedPercent: 40 } } }).state, 'out');
+});
+
+test('quota: a Claude Code run reports its window on the way, and a stopped run counts as spent', async () => {
+  const { parseClaude } = await import('../seat/agents.mjs');
+  let seen = null;
+  const out = [
+    JSON.stringify({ type: 'system', subtype: 'init' }),
+    JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.83, resetsAt: Math.floor(Date.now() / 1000) + 99 } }),
+    JSON.stringify({ type: 'result', result: '{"claim":"x"}', is_error: false }),
+  ].join('\n');
+  assert.equal(parseClaude(out, (q) => (seen = q)), '{"claim":"x"}');
+  assert.deepEqual([seen.state, seen.windows[0].used], ['low', 83]);
+  parseClaude(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', utilization: 1 } }), (q) => (seen = q));
+  assert.equal(seen.state, 'out');
+  assert.equal(parseClaude(JSON.stringify({ result: 'old style', is_error: false })), 'old style', 'plain json still read');
+});
+
+test('quota: the AI with room takes the turn; a card only goes to Claude Code; all spent means nobody', async () => {
+  const { pickAgent, nextReset } = await import('../seat/quota.mjs');
+  const later = new Date(Date.now() + 3600_000).toISOString();
+  const q = (state) => ({ state, windows: state === 'out' ? [{ kind: 'five_hour', used: 100, resetsAt: later }] : [] });
+  assert.equal(pickAgent(['claude', 'codex'], { claude: q('ok'), codex: q('ok') }), 'claude', 'owner order wins on a tie');
+  assert.equal(pickAgent(['claude', 'codex'], { claude: q('low'), codex: q('ok') }), 'codex');
+  assert.equal(pickAgent(['claude', 'codex'], { claude: q('out') }), 'codex', 'unknown is better than spent');
+  assert.equal(pickAgent(['claude', 'codex'], { claude: q('out'), codex: q('ok') }, (a) => a === 'claude'), null);
+  assert.equal(pickAgent(['claude', 'codex'], { claude: q('out'), codex: q('out') }), null);
+  assert.equal(nextReset({ claude: q('out') }), later);
+});
+
+test('quota: asks the CLIs over their local interface without sending a prompt', async () => {
+  const { readClaudeQuota, readCodexQuota } = await import('../seat/quota.mjs');
+  const { spawn } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'fake-cli-'));
+  const fake = join(dir, 'fake.mjs');
+  writeFileSync(
+    fake,
+    `import { createInterface } from 'node:readline';
+const got = [];
+createInterface({ input: process.stdin }).on('line', (l) => {
+  const m = JSON.parse(l); got.push(m);
+  if (m.request?.subtype === 'get_usage') console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { rate_limits_available: true, rate_limits: { five_hour: { utilization: 10, resets_at: null } }, sent: got.map((g) => g.type ?? g.method) } } }));
+  if (m.method === 'account/rateLimits/read') console.log(JSON.stringify({ id: m.id, result: { rateLimits: { primary: { usedPercent: 55, windowDurationMins: 300, resetsAt: null } } } }));
+});`,
+  );
+  const spawnImpl = (cmd, args, o) => {
+    assert.ok(cmd === 'claude' ? args.includes('--tools') && args[args.indexOf('--tools') + 1] === '' : args[0] === 'app-server');
+    return spawn(process.execPath, [fake], { ...o, shell: false });
+  };
+  const c = await readClaudeQuota({ spawnImpl });
+  assert.deepEqual([c.agent, c.state, c.windows[0].used], ['claude', 'ok', 10]);
+  const x = await readCodexQuota({ spawnImpl });
+  assert.deepEqual([x.agent, x.windows[0].used], ['codex', 55]);
+  assert.equal(await readClaudeQuota({ spawnImpl: () => spawn(process.execPath, ['-e', 'process.exit(1)']) }), null, 'a CLI that fails gives no quota, not an error');
+});
+
+test('quota: the keeper reports only state and windows, once per change, and merges what a run saw', async () => {
+  const { QuotaKeeper } = await import('../seat/run.mjs');
+  const calls = [];
+  const conn = { call: async (name, args) => calls.push([name, args]) };
+  const later = new Date(Date.now() + 3600_000).toISOString();
+  const read = async (a) => ({ agent: a, state: 'ok', plan: true, windows: [{ kind: 'five_hour', used: 20, resetsAt: later }, { kind: 'weekly', used: 30, resetsAt: later }], checkedAt: 'x' });
+  const k = new QuotaKeeper({ agent: 'claude', agents: ['claude', 'codex'] }, conn, { canReport: true, read });
+  await k.refresh(true);
+  await k.refresh(true);
+  assert.equal(calls.length, 1, 'unchanged quota is not sent again');
+  assert.deepEqual(calls[0][0], 'moot_report_quota');
+  assert.deepEqual(Object.keys(calls[0][1].agents[0]).sort(), ['agent', 'plan', 'state', 'windows']);
+  await k.seen({ agent: 'claude', state: 'out', plan: true, windows: [{ kind: 'five_hour', used: 100, resetsAt: later }] });
+  assert.equal(k.quotas.claude.windows.length, 2, 'the weekly window from the last read is kept');
+  assert.equal(k.pick(), 'codex');
+  const quiet = new QuotaKeeper({ agent: 'claude' }, { call: async () => assert.fail('no tool, no report') }, { canReport: false, read });
+  await quiet.refresh(true);
+});

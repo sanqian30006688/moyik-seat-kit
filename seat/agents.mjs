@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
+import { fromClaudeEvent } from './quota.mjs';
 
 const isWin = platform() === 'win32';
 
@@ -38,14 +39,20 @@ export function detectAgent() {
   return null;
 }
 
+/** Every supported AI CLI on this computer, Claude Code first. */
+export function detectAgents() {
+  return ['claude', 'codex'].filter(hasCommand);
+}
+
 /**
  * The command line for one run.
  * mode 'speak': no tools at all, or read-only file tools when the owner named a folder to consult.
  * mode 'card': file tools and edits inside the card's work folder, plus only the commands listed.
  */
-export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
+export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile, onQuota = () => {} }) {
   if (cfg.agent === 'claude') {
-    const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config'];
+    // stream-json: the answer comes last, and Claude Code also says how full the plan's windows are.
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--strict-mcp-config'];
     // Files that usually hold secrets stay unreadable, whatever the prompt says.
     args.push('--disallowedTools', ...DENY_READ);
     // Writing a speech needs no tools: nothing on this computer can end up in a speech.
@@ -56,7 +63,7 @@ export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
       args.push('--allowedTools', ...allowRules);
     }
     if (cfg.model) args.push('--model', cfg.model);
-    return { cmd: 'claude', args, cwd, parse: parseClaude };
+    return { cmd: 'claude', args, cwd, parse: (stdout) => parseClaude(stdout, onQuota) };
   }
   if (cfg.agent === 'codex') {
     if (mode !== 'speak') throw new Error('任务卡目前只支持 Claude Code');
@@ -72,26 +79,36 @@ export function agentCommand(cfg, { mode, cwd, allowRules = [], outFile }) {
   throw new Error(`不认识的本机 AI：${cfg.agent}`);
 }
 
-function parseClaude(stdout) {
-  try {
-    const j = JSON.parse(stdout);
-    if (j.is_error) throw new Error(String(j.result ?? 'Claude Code 报错'));
-    return String(j.result ?? '');
-  } catch (err) {
-    if (err instanceof SyntaxError) return stdout;
-    throw err;
+/** The final answer from Claude Code's output. Plan-window events on the way are passed to `onQuota`. */
+export function parseClaude(stdout, onQuota = () => {}) {
+  const lines = stdout.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  let result = null;
+  let quota = null;
+  for (const line of lines) {
+    let j;
+    try {
+      j = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (j.type === 'rate_limit_event') quota = fromClaudeEvent(j.rate_limit_info, quota);
+    else if (j.type === 'result' || (lines.length === 1 && 'result' in j)) result = j;
   }
+  if (quota) onQuota(quota);
+  if (!result) return stdout;
+  if (result.is_error) throw new Error(String(result.result ?? 'Claude Code 报错'));
+  return String(result.result ?? '');
 }
 
 /**
  * Runs the owner's AI once with `prompt` on stdin and returns its final answer as text.
  * Killed after `minutes`. Output is kept in memory only.
  */
-export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn } = {}) {
+export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = [], minutes = cfg.turnMinutes ?? 8, spawnImpl = spawn, onQuota } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'moyik-seat-'));
   const workdir = cwd ?? scratch;
   const outFile = join(scratch, 'answer.txt');
-  const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile });
+  const plan = agentCommand(cfg, { mode, cwd: workdir, allowRules, outFile, onQuota });
   try {
     const { code, stdout, stderr } = await new Promise((resolve, reject) => {
       const child = spawnImpl(plan.cmd, plan.args, { cwd: workdir, shell: plan.shell ?? isWin, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), windowsHide: true });
@@ -112,6 +129,10 @@ export async function runAgent(cfg, prompt, { mode = 'speak', cwd, allowRules = 
       child.stdin.on('error', () => {});
       child.stdin.end(prompt);
     });
+    if (code !== 0) {
+      // A run stopped by the plan's limit still says so on the way out: keep that for the quota.
+      if (plan.cmd === 'claude') try { parseClaude(stdout, onQuota); } catch {}
+    }
     if (code !== 0) throw new Error(`${plan.cmd} 没有正常结束（${code}）${stderr ? '：' + stderr.trim().split('\n').slice(-2).join(' ').slice(0, 300) : ''}`);
     return plan.parse(stdout);
   } finally {

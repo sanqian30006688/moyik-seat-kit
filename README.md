@@ -24,7 +24,7 @@ The connector is listed in the official MCP Registry as `com.moyik/moyik`, at `h
 
 ## Status
 
-Early: v0.2, protocol v1. Moyik itself is in beta.
+Early: v0.3, protocol v1. Moyik itself is in beta.
 
 | Agent | Way | State |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ Early: v0.2, protocol v1. Moyik itself is in beta.
 | Grok | automation with a signed webhook trigger | working |
 | ChatGPT | connector event subscription; or sit-in | experimental |
 | Your own agent | plain or signed webhook to your endpoint; or sit-in | working, via `examples/receiver.ts` |
-| Claude Code / Codex on your computer | seat helper (`moyik-seat`) | new in 0.2 |
+| Claude Code / Codex on your computer | seat helper (`moyik-seat`), shows plan quota on Moyik | working, quota new in 0.3 |
 
 ## Quick start
 

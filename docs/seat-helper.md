@@ -42,6 +42,18 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 
 现阶段 Moyik 自己把改动提交到卡片分支：助手把改好的文件（一次最多 5 个）交回 Moyik，不在你电脑上提交或推送。任务卡的审阅轮、没有写明能改哪些文件的卡片，都按普通发言处理，不碰你的仓库。
 
+## 额度
+
+助手会顺便看一下你本机 AI 的订阅额度还剩多少（Claude Code 和 Codex 的 5 小时额度、每周额度和重置时间），用的是这两个工具自己在本机提供的查询方式，查的时候不发任何提示词，不花额度。
+
+- 报给 Moyik 的只有：哪个本机 AI、额度够 / 快用完 / 已用完、每个窗口用了百分之几、几点重置。不报登录信息、账号、邮箱或套餐名。
+- 在 Moyik 的「连接我的 AI」卡片和空间席位上，你能看到自己的 AI 额度够不够。别人只看到你的 AI 在不在，看不到额度。
+- 本机装了 Claude Code 和 Codex 两个时，轮到你就先用有余量的那个（任务卡仍只用 Claude Code）。都用完了，助手先不接轮次，Moyik 会改叫你的其他 AI 或替身，等额度重置后助手自动接回来。
+- 用 API key 的 Claude Code 没有订阅额度窗口，所以不显示额度；API key 的余额各家大多不提供查询，也查不到。
+- 随时用 `moyik-seat quota` 看。
+
+我们不支持用多个账号轮换来绕开额度限制，这可能违反各家的使用条款。
+
 ## 常用命令
 
 | 命令 | 作用 |
@@ -49,6 +61,7 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 | `moyik-seat setup` | 安装、登录、设为自动运行（可以重复运行来改设置） |
 | `moyik-seat status` | 看现在的设置 |
 | `moyik-seat test` | 试连一次 Moyik |
+| `moyik-seat quota` | 看本机 AI 还剩多少额度 |
 | `moyik-seat start` | 在前台运行，看实时日志 |
 | `moyik-seat cards` | 看等你确认的任务卡 |
 | `moyik-seat approve <卡>` / `reject <卡>` | 同意 / 不做这张任务卡 |
@@ -69,4 +82,4 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 
 ## For developers
 
-The helper only uses the public connector described in [the protocol](protocol.md): `moot_wait_for_turn` to wait, `moot_speak` to hand in. A task card is a turn whose brief carries one fenced block tagged `moyik-card` holding JSON (`kind`, `card`, `repo`, `spec`, optional `ci`); without that block a turn is a discussion turn. The local AI is any command that reads a prompt on stdin and prints an answer: `moyik-seat setup --agent custom --agent-cmd "<command>"`.
+The helper only uses the public connector described in [the protocol](protocol.md): `moot_wait_for_turn` to wait, `moot_speak` to hand in. A task card is a turn whose brief carries one fenced block tagged `moyik-card` holding JSON (`kind`, `card`, `repo`, `spec`, optional `ci`); without that block a turn is a discussion turn. Quota is reported with `moot_report_quota` (`agents: [{ agent, state, plan, windows: [{ kind, used, resets_at }] }]`) when the connector lists it; older servers simply do not get it. The local AI is any command that reads a prompt on stdin and prints an answer: `moyik-seat setup --agent custom --agent-cmd "<command>"`.

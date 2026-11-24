@@ -45,7 +45,8 @@ function writeJson(name, value) {
 /**
  * @typedef {object} SeatConfig
  * @property {string} origin       Moyik address, https://moyik.com unless testing.
- * @property {'claude'|'codex'|'custom'} agent  Which local AI answers for the seat.
+ * @property {'claude'|'codex'|'custom'} agent  Which local AI answers for the seat (the first of `agents`).
+ * @property {string[]} [agents]  Every local AI to use, in the owner's order; one with room left takes the turn.
  * @property {string} [agentCmd]   For agent=custom: a command that reads the prompt on stdin and prints the answer.
  * @property {string} [model]      Optional model name passed to the local AI.
  * @property {string} [repo]       The owner's local clone that task cards are carried out in.
