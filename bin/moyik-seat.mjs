@@ -10,7 +10,7 @@ import { store } from '../seat/secrets.mjs';
 import { spawnSync } from 'node:child_process';
 import { login, revoke } from '../seat/oauth.mjs';
 import { detectAgent, hasCommand, ANTIGRAVITY_RISK } from '../seat/agents.mjs';
-import { addMoyikToAntigravity, SIT_IN_PROMPT } from '../seat/antigravity.mjs';
+import { addMoyikToAntigravity, readTokenQuietly, SIT_IN_PROMPT } from '../seat/antigravity.mjs';
 import { runSeat } from '../seat/run.mjs';
 import { NeedsLogin, Connector } from '../seat/mcp.mjs';
 import { installService, uninstallService } from '../seat/service.mjs';
@@ -21,7 +21,7 @@ const HELP = `moyik-seat：Moyik 座位助手。轮到你的席位时，叫醒�
   moyik-seat start            在前台守候（setup 之后一般不用手动运行）
   moyik-seat status           看看现在的设置和登录
   moyik-seat test             只连一次 Moyik，确认能读到你的席位
-  moyik-seat add antigravity  把 Moyik 加进 Antigravity 的 MCP 设置，你在 Antigravity 里自己让它入座
+  moyik-seat add antigravity [--token]  把 Moyik 加进 Antigravity 的 MCP 设置（--token：在终端里输入静态令牌），你在 Antigravity 里自己让它入座
   moyik-seat cards            看等你确认的任务卡
   moyik-seat approve <卡>     同意让本机 AI 做这张任务卡
   moyik-seat reject <卡>      不做这张任务卡
@@ -57,6 +57,7 @@ const { values: opt, positionals } = parseArgs({
     origin: { type: 'string' },
     'no-service': { type: 'boolean' },
     'accept-google-risk': { type: 'boolean' },
+    token: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -134,9 +135,15 @@ async function main() {
   }
   if (cmd === 'add') {
     if (positionals[1] !== 'antigravity') fail('用法：moyik-seat add antigravity');
-    const files = addMoyikToAntigravity(opt.origin ?? cfg.origin);
+    let token;
+    if (opt.token) {
+      token = await readTokenQuietly();
+      if (!/^moot_st_\S{8,190}$/.test(token)) fail('这不像 Moyik 的静态令牌（以 moot_st_ 开头）。到 Moyik「连接我的 AI」重新生成一个。');
+    }
+    const files = addMoyikToAntigravity(opt.origin ?? cfg.origin, { token });
     console.log(`已把 Moyik 加进 Antigravity 的设置：\n  ${files.join('\n  ')}\n（原文件备份成 .bak）`);
-    console.log('\n接下来：\n1. 打开 Antigravity，在 MCP Servers 里刷新，按提示在浏览器里登录 Moyik、点「允许」。\n2. 在 Moyik 网页「我的 AI」里把「谁替你说话」选成「我自己的 AI」。\n3. 在 Antigravity 的对话框里粘下面这段，工具权限选「总是允许」：\n');
+    console.log(token ? '\n令牌只写进了上面的文件（只有你能读），没有经过任何聊天。不用时到 Moyik「连接我的 AI」删掉它。' : '\n如果 Antigravity 连不上、要你填令牌：到 Moyik「连接我的 AI」生成静态令牌，再运行 moyik-seat add antigravity --token。不要把令牌贴进任何 AI 的对话框。');
+    console.log('\n接下来：\n1. 打开 Antigravity，在 MCP Servers 里刷新（没用令牌时会弹出浏览器，登录 Moyik、点「允许」）。\n2. 在 Moyik 网页「我的 AI」里把「谁替你说话」选成「我自己的 AI」。\n3. 在 Antigravity 的对话框里粘下面这段，工具权限选「总是允许」：\n');
     console.log(SIT_IN_PROMPT);
     console.log('\n这种方式是你自己在 Antigravity 里操作，不在后台叫醒它，没有谷歌封号的问题；Antigravity 要一直开着这个对话。');
     return;

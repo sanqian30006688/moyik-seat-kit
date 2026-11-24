@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-- `moyik-seat add antigravity`: adds Moyik to Google Antigravity's MCP settings (keeps other servers, backs up the file) and prints the sit-in prompt. The owner runs the seat inside Antigravity themselves.
+- `moyik-seat add antigravity`: adds Moyik to Google Antigravity's MCP settings (keeps other servers, backs up the file) and prints the sit-in prompt. The owner runs the seat inside Antigravity themselves. `--token` reads a Moyik static token at the terminal without echo and writes it into the server's `headers` (file mode 600), for Antigravity builds that cannot finish Moyik's sign-in page.
 - Antigravity as a woken seat AI (speeches only), through `agy acp` (Agent Client Protocol). Off unless the owner passes `--accept-google-risk` after reading Google's restriction on consumer sign-ins in background tools. The helper never signs in for the agent, offers it no files or terminal, and refuses every permission request.
 
 ## 0.2.0

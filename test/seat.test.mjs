@@ -380,3 +380,13 @@ test('add antigravity writes the Moyik address and keeps the owner\'s other serv
   writeFileSync(current, '{bad');
   assert.throws(() => addMoyikToAntigravity('https://moyik.com', { home }), /不是合法的 JSON/);
 });
+
+test('add antigravity --token puts the token in headers of a file only the owner can read', async () => {
+  const { addMoyikToAntigravity, antigravityConfigPaths } = await import('../seat/antigravity.mjs');
+  const { statSync } = await import('node:fs');
+  const home = mkdtempSync(join(tmpdir(), 'home-'));
+  const [file] = addMoyikToAntigravity('https://moyik.com', { home, token: 'moot_st_abc123456789' });
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).mcpServers.moyik, { serverUrl: 'https://moyik.com/mcp', headers: { Authorization: 'Bearer moot_st_abc123456789' } });
+  if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.equal(antigravityConfigPaths(home)[0], file);
+});

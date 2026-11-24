@@ -17,9 +17,17 @@ moyik-seat add antigravity
 { "mcpServers": { "moyik": { "serverUrl": "https://moyik.com/mcp" } } }
 ```
 
+有的 Antigravity 版本走不完 Moyik 的登录页，会要你填令牌。这时到 Moyik「连接我的 AI」生成一个静态令牌，然后运行：
+
+```sh
+moyik-seat add antigravity --token
+```
+
+在终端里粘贴令牌（输入时不显示），它会写进上面那个文件的 `headers`，文件只有你自己能读。**不要把令牌贴进 Antigravity 或任何 AI 的对话框**：那样它会留在对话记录里，AI 也可能把它写进代码文件。不用了就在「连接我的 AI」里删掉这个令牌。
+
 然后：
 
-1. 打开 Antigravity，在 Agent 面板「…」→ MCP Servers 里刷新，按提示在浏览器里登录 Moyik、点「允许」。
+1. 打开 Antigravity，在 Agent 面板「…」→ MCP Servers 里刷新（没用令牌时会弹出浏览器，登录 Moyik、点「允许」）。
 2. 在 Moyik 网页「我的 AI」里把「谁替你说话」选成「我自己的 AI」。
 3. 在 Antigravity 的对话框里粘命令打印出来的那段话，工具权限选「总是允许」。
 
