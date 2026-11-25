@@ -8,6 +8,7 @@ import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { configDir } from './config.mjs';
 import { fence, isSensitive } from './brief.mjs';
+import { checkEnv } from './agents.mjs';
 
 function git(cwd, args, { allowFail = false } = {}) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
@@ -97,14 +98,19 @@ export function editRules(scope) {
   });
 }
 
+/** Text from the card on one line of the owner's screen: no line breaks or control characters that could dress it up as something else. */
+export function oneLine(text, max = 200) {
+  return String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim().slice(0, max);
+}
+
 /** What the owner is shown before anything runs. */
 export function planText(card, cfg) {
   return [
-    `任务卡：${card.title}（第 ${card.attempt} 次）`,
-    `仓库：${card.repo.fullName}，本机目录 ${cfg.repo}`,
+    `任务卡：${oneLine(card.title, 120)}（第 ${card.attempt} 次）`,
+    `仓库：${oneLine(card.repo.fullName)}，本机目录 ${cfg.repo}`,
     `分支：${card.repo.branch}（从 ${card.repo.baseBranch} 开出，只推这一个分支）`,
-    `本机 AI 能改的文件：${card.scope.join('、')}`,
-    card.context.length ? `本机 AI 能看的参考文件：${card.context.join('、')}` : '',
+    `本机 AI 能改的文件：${card.scope.map((p) => oneLine(p)).join('、')}`,
+    card.context.length ? `本机 AI 能看的参考文件：${card.context.map((p) => oneLine(p)).join('、')}` : '',
     `改完后运行的检查命令：${cfg.checkCommand || '（没有设置）'}`,
   ]
     .filter(Boolean)
@@ -172,7 +178,7 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
     git(dir, ['sparse-checkout', 'disable']);
     let tests;
     if (cfg.checkCommand) {
-      const r = spawnSync(cfg.checkCommand, { cwd: dir, shell: true, encoding: 'utf8', timeout: 15 * 60_000, windowsHide: true });
+      const r = spawnSync(cfg.checkCommand, { cwd: dir, shell: true, encoding: 'utf8', timeout: 15 * 60_000, windowsHide: true, env: checkEnv() });
       tests = testSummary(r.status ?? 1, `${r.stdout ?? ''}\n${r.stderr ?? ''}`);
     }
 

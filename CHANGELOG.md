@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Task cards: a `moyik-card` block counts only when its opening line carries this turn's own `turn_id`. A block quoted from a topic or from someone's speech is never read as a card.
+- A card's files can no longer include git's own folder or the repository's workflows (`.git/`, `.github/workflows/`, `.github/actions/`), and such files are never handed in.
+- What the owner confirms on their computer shows the card's title and paths on one line each.
+- The check command runs without secrets from the environment (tokens, keys, cloud and database sign-ins).
+
 ## 0.3.0
 
 - Plan quota: the helper reads how full the 5-hour and weekly windows of your local Claude Code and Codex are, through each CLI's own local interface (Claude Code's structured `/usage` data, Codex's `account/rateLimits/read`), and from what each Claude Code run reports. No prompt is sent to read it, so it spends nothing.

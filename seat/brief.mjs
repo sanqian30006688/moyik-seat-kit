@@ -1,7 +1,10 @@
 // Reading what moot_wait_for_turn returns, and turning the local AI's answer into moot_speak's arguments.
 
-/** Paths that usually hold secrets. Never in a card's scope or context, never readable by the AI, never handed in. */
-export const SENSITIVE = [/(^|\/)\.env($|[.\/])/i, /(^|\/)\.(ssh|aws|gnupg|docker|kube|npmrc|netrc|pypirc|git-credentials)($|\/)/i, /\.(pem|key|p12|pfx|keystore|jks)$/i, /(^|\/)id_(rsa|dsa|ecdsa|ed25519)/i, /(^|\/)(credentials|secrets?)(\.[a-z]+)?($|\/)/i];
+/**
+ * Paths that usually hold secrets, and the ones that decide what runs: git's own folder and the
+ * repository's workflows. Never in a card's scope or context, never readable by the AI, never handed in.
+ */
+export const SENSITIVE = [/(^|\/)\.git($|\/)/i, /(^|\/)\.github\/(workflows|actions)($|\/)/i, /(^|\/)\.env($|[.\/])/i, /(^|\/)\.(ssh|aws|gnupg|docker|kube|npmrc|netrc|pypirc|git-credentials)($|\/)/i, /\.(pem|key|p12|pfx|keystore|jks)$/i, /(^|\/)id_(rsa|dsa|ecdsa|ed25519)/i, /(^|\/)(credentials|secrets?)(\.[a-z]+)?($|\/)/i];
 export const isSensitive = (path) => SENSITIVE.some((re) => re.test(String(path)));
 
 const TICKET = /\b((?:t|test)_[A-Za-z0-9_-]{16,80})\b/;
@@ -18,20 +21,32 @@ export function readWait(text) {
   const ticket = TICKET.exec(s)?.[1];
   if (ticket?.startsWith('test_')) return { kind: 'test', turnId: ticket };
   if (ticket) {
-    const card = readCard(s);
+    const card = readCard(s, ticket);
     return card ? { kind: 'turn', turnId: ticket, brief: s, card } : { kind: 'turn', turnId: ticket, brief: s };
   }
   if (s.startsWith('讨论已结束')) return { kind: 'over' };
   return { kind: 'idle' };
 }
 
-/** A task card carries one fenced block tagged moyik-card with JSON in it. Without it, a turn is a discussion turn. */
-export function readCard(text) {
-  const m = /```moyik-card[^\n]*\n([\s\S]*?)\n```/.exec(text);
+/**
+ * A task card carries one fenced block tagged moyik-card with JSON in it. Without it, a turn is a discussion turn.
+ * A brief also quotes what other members and their AIs wrote, so a block counts only when its opening
+ * line names this turn's own id, which Moyik hands to this seat alone: a block somebody typed into a
+ * topic or a speech cannot carry it.
+ */
+export function readCard(text, turnId) {
+  if (!turnId) return null;
+  let m = null;
+  for (const hit of String(text ?? '').matchAll(/```moyik-card[ \t]+(\S+)[ \t]*\r?\n([\s\S]*?)\n```/g)) {
+    if (hit[1] === turnId) {
+      m = hit;
+      break;
+    }
+  }
   if (!m) return null;
   let data;
   try {
-    data = JSON.parse(m[1]);
+    data = JSON.parse(m[2]);
   } catch {
     return null;
   }

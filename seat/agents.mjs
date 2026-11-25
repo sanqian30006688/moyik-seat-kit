@@ -27,6 +27,16 @@ export function childEnv(env = process.env) {
   return out;
 }
 
+/**
+ * The environment the owner's check command runs in. It runs code the AI has just written for a
+ * card other people worded, so it gets no secrets at all, not even the local AI's own sign-in.
+ */
+export function checkEnv(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (!SECRET_ENV.test(k)) out[k] = v;
+  return out;
+}
+
 /** Is this CLI installed and on PATH? */
 export function hasCommand(cmd) {
   const r = spawnSync(isWin ? 'where' : 'which', [cmd], { stdio: 'ignore' });
