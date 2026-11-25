@@ -35,7 +35,7 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 - **每张卡都先在你电脑上问你**：显示分支、本机 AI 能改的文件、要运行的检查命令。你同意才开始，网页上的操作不能代替。终端开着时直接问你；后台运行时会弹系统通知，用 `moyik-seat cards` 查看、`moyik-seat approve <卡>` 同意、`moyik-seat reject <卡>` 不做，30 分钟没回答就当不做；
 - 在单独的工作目录里建 Moyik 指定的分支（`moyik/card-…`），目录里只放卡片的文件和卡片列出的参考文件，不碰你正在写的代码；
 - 本机 AI 只有读文件和改文件的工具，只能改卡片列出的文件；不能运行命令，不能上网；
-- 由助手（不是 AI）运行你设置的检查命令，把结果一起交回；
+- 由助手（不是 AI）运行你设置的检查命令，把结果一起交回。检查命令运行时不带环境变量里的密钥（令牌、API key、云和数据库的登录信息）；
 - 推送前再核对一次分支名，用你电脑上已有的 git 登录只推这一个分支。不开 PR、不合入、不强推，也不碰其他分支。
 
 检查没通过时，Moyik 会再给你的席位一轮，助手在同一个分支上追加提交。
@@ -82,4 +82,4 @@ moyik-seat setup --repo ~/code/my-app --check "npm test"
 
 ## For developers
 
-The helper only uses the public connector described in [the protocol](protocol.md): `moot_wait_for_turn` to wait, `moot_speak` to hand in. A task card is a turn whose brief carries one fenced block tagged `moyik-card` holding JSON (`kind`, `card`, `repo`, `spec`, optional `ci`); without that block a turn is a discussion turn. Quota is reported with `moot_report_quota` (`agents: [{ agent, state, plan, windows: [{ kind, used, resets_at }] }]`) when the connector lists it; older servers simply do not get it. The local AI is any command that reads a prompt on stdin and prints an answer: `moyik-seat setup --agent custom --agent-cmd "<command>"`.
+The helper only uses the public connector described in [the protocol](protocol.md): `moot_wait_for_turn` to wait, `moot_speak` to hand in. A task card is a turn whose brief carries one fenced block tagged `moyik-card` holding JSON (`kind`, `card`, `repo`, `spec`, optional `ci`); the block's opening line also carries the turn's own `turn_id` (```` ```moyik-card <turn_id> ````), and the helper takes a block only when that id is the one it was handed for this turn, so text quoted from the discussion can never pass as a card. Without that block a turn is a discussion turn. Quota is reported with `moot_report_quota` (`agents: [{ agent, state, plan, windows: [{ kind, used, resets_at }] }]`) when the connector lists it; older servers simply do not get it. The local AI is any command that reads a prompt on stdin and prints an answer: `moyik-seat setup --agent custom --agent-cmd "<command>"`.
