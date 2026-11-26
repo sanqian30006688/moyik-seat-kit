@@ -7,7 +7,8 @@
 export const SENSITIVE = [/(^|\/)\.git($|\/)/i, /(^|\/)\.github\/(workflows|actions)($|\/)/i, /(^|\/)\.env($|[.\/])/i, /(^|\/)\.(ssh|aws|gnupg|docker|kube|npmrc|netrc|pypirc|git-credentials)($|\/)/i, /\.(pem|key|p12|pfx|keystore|jks)$/i, /(^|\/)id_(rsa|dsa|ecdsa|ed25519)/i, /(^|\/)(credentials|secrets?)(\.[a-z]+)?($|\/)/i];
 export const isSensitive = (path) => SENSITIVE.some((re) => re.test(String(path)));
 
-const TICKET = /\b((?:t|test)_[A-Za-z0-9_-]{16,80})\b/;
+// Turn ids may end in "-", where \b would cut the id short.
+const TICKET = /(?<![A-Za-z0-9_-])((?:t|test)_[A-Za-z0-9_-]{16,80})(?![A-Za-z0-9_-])/;
 
 /**
  * What a wait answer is:
@@ -67,7 +68,8 @@ export function readCard(text, turnId) {
     id: String(data.card.id ?? ''),
     title: String(data.card.title ?? ''),
     goal: String(data.card.goal ?? ''),
-    acceptance: Array.isArray(data.card.acceptance) ? data.card.acceptance.map(String) : [],
+    // Moyik lists acceptance items as { id, text }.
+    acceptance: Array.isArray(data.card.acceptance) ? data.card.acceptance.map((a) => (typeof a === 'string' ? a : String(a?.text ?? ''))).filter(Boolean) : [],
     scope,
     attempt: Number(data.card.attempt) || 1,
     repo: { fullName: String(data.repo.full_name ?? ''), baseBranch: base, baseSha: sha, branch },

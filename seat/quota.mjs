@@ -177,7 +177,7 @@ export async function readCodexQuota(opts = {}) {
     'codex',
     ['app-server'],
     [
-      { id: 1, method: 'initialize', params: { clientInfo: { name: 'moyik-seat', version: '0.3.1' } } },
+      { id: 1, method: 'initialize', params: { clientInfo: { name: 'moyik-seat', version: '0.3.2' } } },
       { method: 'initialized' },
       { id: 2, method: 'account/rateLimits/read' },
     ],
