@@ -210,5 +210,5 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
 function handInFiles(dir, kept, notes, tests) {
   if (kept.length > 5) return { kind: 'pass', text: `改动涉及 ${kept.length} 个文件，超过一次能交的 5 个，这次没有交。请把卡片拆小。`.slice(0, 200) };
   const files = kept.map((f) => (existsSync(join(dir, f.path)) ? { name: f.path, content: readFileSync(join(dir, f.path), 'utf8') } : { name: f.path, delete: true }));
-  return { files, text: (notes || '按卡片改好了。').slice(0, 200), ...(tests ? { detail: `检查结果（${tests.passed} 过，${tests.failed} 没过）：\n${tests.summary}` } : {}) };
+  return { files, type: '新观点', text: (notes || '按卡片改好了。').slice(0, 200), ...(tests ? { detail: `检查结果（${tests.passed} 过，${tests.failed} 没过）：\n${tests.summary}` } : {}) };
 }

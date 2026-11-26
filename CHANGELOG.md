@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Task cards are handed in as files (at most 5) for now. Moyik takes a card's branch only from the member's own fork, which the helper does not push to yet; pushing to the repository itself was turned back.
+- A card's hand-in carries a speech type, which Moyik requires.
+- A `turn_id` ending in `-` is read whole, so that turn's card is no longer missed.
+- Acceptance items show as text in the AI's instructions.
+
 ## 0.3.1
 
 - Task cards: a `moyik-card` block counts only when its opening line carries this turn's own `turn_id`. A block quoted from a topic or from someone's speech is never read as a card.

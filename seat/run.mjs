@@ -17,7 +17,8 @@ export async function handleTurn(conn, cfg, turn, { ask = (p, o) => runAgent(cfg
   const works = turn.card && turn.card.step === 'write' && turn.card.scope.length > 0;
   if (turn.card && !works) log(turn.card.step === 'review' ? '任务卡的审阅轮，按发言处理' : '这张任务卡没写能改哪些文件，不在本机仓库动手，按发言处理');
   if (works) {
-    const canPushBranch = !!speakSchema?.properties?.branch;
+    // Moyik now takes card branches only from the member's own fork, which the helper cannot push to yet; files it can hand in.
+    const canPushBranch = false;
     const args = await doCard(turn.card, cfg, ask, (m) => log(m), confirm, { canPushBranch });
     await conn.call('moot_speak', { ...args, turn_id: turn.turnId });
     return args.branch ? `已推分支 ${args.branch.name}` : args.files ? '已交文件' : '没有动手或没有改动';

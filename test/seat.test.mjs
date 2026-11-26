@@ -41,6 +41,12 @@ test('reads what moot_wait_for_turn answers', () => {
   assert.equal(turn.card, undefined);
 });
 
+test('reads a turn id that ends in a dash', () => {
+  const id = 't_eg0xpT3T9pEGfork-Fg2c5l-';
+  assert.equal(readWait(`调用 moot_speak，带上 turn_id（${id}）和：`).turnId, id);
+  assert.equal(readWait(`turn_id: ${id}\n`).turnId, id);
+});
+
 test('reads a task card only from a valid moyik-card block', () => {
   const t = readWait(card());
   assert.equal(t.card.repo.branch, 'moyik/card-c1');
