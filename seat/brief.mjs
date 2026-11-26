@@ -75,7 +75,18 @@ export function readCard(text, turnId) {
     repo: { fullName: String(data.repo.full_name ?? ''), baseBranch: base, baseSha: sha, branch },
     spec: data.spec ? { version: String(data.spec.version ?? ''), text: String(data.spec.text ?? '') } : null,
     ci: data.ci ? { summary: String(data.ci.summary ?? '') } : null,
+    // How much one hand-in of files may hold; Moyik checks again on its side.
+    limits: {
+      files: limit(data.limits?.files, 5, 100),
+      bytes: limit(data.limits?.bytes, 400 * 1024, 2 * 1024 * 1024),
+      fileBytes: limit(data.limits?.file_bytes, 200 * 1024, 200 * 1024),
+    },
   };
+}
+
+function limit(value, fallback, most) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? Math.min(n, most) : fallback;
 }
 
 const HAND_IN = [

@@ -55,6 +55,9 @@ test('reads a task card only from a valid moyik-card block', () => {
   assert.equal(readCard(card({ repo: { full_name: 'acme/app', base_branch: '--upload-pack=x', branch: 'moyik/card-c1' } }), TICKET), null);
   assert.equal(readCard(card({ repo: { full_name: 'acme/app', base_branch: 'main', base_sha: 'zz', branch: 'moyik/card-c1' } }), TICKET), null);
   assert.deepEqual(readCard(card({ card: { id: 'c', title: 't', scope: ['../etc', '/abs', 'ok/'] } }), TICKET).scope, ['ok/']);
+  assert.deepEqual(readCard(card({}), TICKET).limits, { files: 5, bytes: 400 * 1024, fileBytes: 200 * 1024 }, 'a card that names no limits keeps the old ones');
+  assert.deepEqual(readCard(card({ limits: { files: 100, bytes: 2097152, file_bytes: 204800 } }), TICKET).limits, { files: 100, bytes: 2097152, fileBytes: 204800 });
+  assert.equal(readCard(card({ limits: { files: 9999 } }), TICKET).limits.files, 100, 'never more than Moyik takes');
   assert.equal(readCard(`\`\`\`moyik-card ${TICKET}\nnot json\n\`\`\``, TICKET), null);
 });
 

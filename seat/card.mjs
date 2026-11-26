@@ -183,7 +183,7 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
     }
 
     // Where Moyik takes the change as files and commits it itself, nothing is committed or pushed here.
-    if (!canPushBranch) return handInFiles(dir, kept, notes, tests);
+    if (!canPushBranch) return handInFiles(card, dir, kept, notes, tests);
 
     git(dir, ['add', '-A', '--', ...kept.map((f) => f.path)]);
     const title = card.title.replace(/[\r\n]+/g, ' ').slice(0, 72);
@@ -199,16 +199,32 @@ export async function doCard(card, cfg, ask, say = () => {}, confirm = async () 
       return { branch: { name: card.repo.branch, head_sha: head, ...(tests ? { tests } : {}), notes: notes.slice(0, 2000) } };
     }
     // No write access to the repository: hand in the changed files instead, as the code scene takes them.
-    return handInFiles(dir, kept, `推不上分支（主人对仓库可能没有写权限），改为直接交文件。${notes}`, tests);
+    return handInFiles(card, dir, kept, `推不上分支（主人对仓库可能没有写权限），改为直接交文件。${notes}`, tests);
   } finally {
     // The work folder is not left behind; the branch itself stays in the owner's clone.
     git(repo, ['worktree', 'remove', '--force', dir], { allowFail: true });
   }
 }
 
-/** The change as moot_speak files: whole content of each changed file, at most 5. */
-function handInFiles(dir, kept, notes, tests) {
-  if (kept.length > 5) return { kind: 'pass', text: `改动涉及 ${kept.length} 个文件，超过一次能交的 5 个，这次没有交。请把卡片拆小。`.slice(0, 200) };
-  const files = kept.map((f) => (existsSync(join(dir, f.path)) ? { name: f.path, content: readFileSync(join(dir, f.path), 'utf8') } : { name: f.path, delete: true }));
+/** The change as moot_speak files: whole content of each changed file, within the card's limits. */
+function handInFiles(card, dir, kept, notes, tests) {
+  const most = card.limits;
+  const tooBig = (why) => ({ kind: 'pass', text: `${why}，这次没有交。请把卡片拆小。`.slice(0, 200) });
+  if (kept.length > most.files) return tooBig(`改动涉及 ${kept.length} 个文件，超过一次能交的 ${most.files} 个`);
+  let total = 0;
+  const files = [];
+  for (const f of kept) {
+    const path = join(dir, f.path);
+    if (!existsSync(path)) {
+      files.push({ name: f.path, delete: true });
+      continue;
+    }
+    const bytes = readFileSync(path);
+    if (bytes.includes(0)) return tooBig(`${f.path} 是二进制文件，Moyik 现在只收文本`);
+    if (bytes.length > most.fileBytes) return tooBig(`${f.path} 有 ${Math.ceil(bytes.length / 1024)} KB，超过单个文件 ${Math.round(most.fileBytes / 1024)} KB 的上限`);
+    total += bytes.length;
+    files.push({ name: f.path, content: bytes.toString('utf8') });
+  }
+  if (total > most.bytes) return tooBig(`改动一共 ${Math.ceil(total / 1024)} KB，超过一次能交的 ${Math.round(most.bytes / 1024)} KB`);
   return { files, type: '新观点', text: (notes || '按卡片改好了。').slice(0, 200), ...(tests ? { detail: `检查结果（${tests.passed} 过，${tests.failed} 没过）：\n${tests.summary}` } : {}) };
 }
