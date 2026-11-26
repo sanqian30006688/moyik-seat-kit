@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3
+
+- A task card's change is handed in as files up to what the card allows (up to 100 files, 2 MB in all), no longer at most 5. Binary files and files over the size limit are not handed in, and the helper says so.
+
 ## 0.3.2
 
 - Task cards are handed in as files (at most 5) for now. Moyik takes a card's branch only from the member's own fork, which the helper does not push to yet; pushing to the repository itself was turned back.
